@@ -11,6 +11,7 @@ from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
 from reachy_mini_conversation_app.choreographer.store import save_move
 from reachy_mini_conversation_app.choreographer.composer import MoveComposer, MoveComposerError
 
+
 logger = logging.getLogger(__name__)
 
 READY_CHIME = "move_ready.wav"

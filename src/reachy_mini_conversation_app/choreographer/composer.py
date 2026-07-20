@@ -11,14 +11,15 @@ from __future__ import annotations
 import os
 import asyncio
 import logging
-from dataclasses import dataclass
 from typing import Any, Protocol
+from dataclasses import dataclass
 
 from reachy_mini_conversation_app.config import config
 from reachy_mini_conversation_app.choreographer.bake import BakeError, bake_source
 from reachy_mini_conversation_app.choreographer.limits import DEFAULT_LIMITS
 from reachy_mini_conversation_app.choreographer.parsing import MoveHeader, ParseError, extract_move_source
 from reachy_mini_conversation_app.choreographer.validator import validate_trajectory
+
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,9 @@ class MoveComposer:
                 attempts=attempt,
             )
 
-        raise MoveComposerError(f"could not produce a valid move after {MAX_ATTEMPTS} attempts; last failure: {last_failure}")
+        raise MoveComposerError(
+            f"could not produce a valid move after {MAX_ATTEMPTS} attempts; last failure: {last_failure}"
+        )
 
 
 class _ValidationFailed(Exception):

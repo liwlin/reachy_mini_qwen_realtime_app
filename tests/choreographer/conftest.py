@@ -6,6 +6,7 @@ import pytest
 
 from reachy_mini.utils import create_head_pose
 
+
 FPS = 50.0
 
 
@@ -29,5 +30,5 @@ def build_move(duration_s=4.0, pos_amp=0.02, angle_amp=math.radians(15), antenna
 
 @pytest.fixture
 def make_move():
-    """Factory fixture for gentle test trajectories."""
+    """Provide a factory for gentle test trajectories."""
     return build_move

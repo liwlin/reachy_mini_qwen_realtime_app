@@ -14,6 +14,7 @@ import json
 import math
 from typing import Any
 
+
 _CPU_SECONDS_LIMIT = 10
 
 
@@ -33,6 +34,7 @@ def _apply_self_rlimits() -> None:
 def _build_namespace() -> dict[str, Any]:
     """Expose the symbolic-motion vocabulary the generated code may use."""
     import numpy as np
+
     from reachy_mini_dances_library import rhythmic_motion
 
     namespace: dict[str, Any] = {"math": math, "np": np, "numpy": np}

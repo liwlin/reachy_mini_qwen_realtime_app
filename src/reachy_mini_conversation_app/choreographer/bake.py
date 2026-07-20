@@ -8,6 +8,7 @@ import tempfile
 import subprocess
 from typing import Any
 
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_FPS = 50.0

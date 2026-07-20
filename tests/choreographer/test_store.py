@@ -2,11 +2,12 @@
 
 import pytest
 
-from reachy_mini_conversation_app.choreographer.store import list_moves, load_move, save_move
+from reachy_mini_conversation_app.choreographer.store import load_move, save_move, list_moves
 from reachy_mini_conversation_app.choreographer.composer import ComposedMove
 
 
 def composed(name="test_move"):
+    """Composed."""
     return ComposedMove(
         name=name,
         description="a test move",
@@ -20,6 +21,7 @@ def composed(name="test_move"):
 
 
 def test_save_load_roundtrip(tmp_path):
+    """Check save load roundtrip."""
     name, move_dir = save_move(tmp_path, composed(), brief="do a test")
     assert name == "test_move"
     assert (move_dir / "source.py").exists()
@@ -30,12 +32,14 @@ def test_save_load_roundtrip(tmp_path):
 
 
 def test_name_collision_gets_suffix(tmp_path):
+    """Check name collision gets suffix."""
     assert save_move(tmp_path, composed(), brief="b")[0] == "test_move"
     assert save_move(tmp_path, composed(), brief="b")[0] == "test_move_2"
     assert save_move(tmp_path, composed(), brief="b")[0] == "test_move_3"
 
 
 def test_list_moves_most_recent_first(tmp_path):
+    """Check list moves most recent first."""
     save_move(tmp_path, composed("first"), brief="b")
     save_move(tmp_path, composed("second"), brief="b")
     names = [meta["name"] for meta in list_moves(tmp_path)]
@@ -43,10 +47,12 @@ def test_list_moves_most_recent_first(tmp_path):
 
 
 def test_list_moves_empty_when_missing(tmp_path):
+    """Check list moves empty when missing."""
     assert list_moves(tmp_path / "nothing_here") == []
 
 
 def test_load_missing_move_raises(tmp_path):
+    """Check load missing move raises."""
     with pytest.raises(FileNotFoundError):
         load_move(tmp_path, "ghost")
 

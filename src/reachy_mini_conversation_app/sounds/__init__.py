@@ -1,8 +1,8 @@
 """Packaged notification sounds played through the robot's media pipeline."""
 
+from typing import Protocol
 from pathlib import Path
 from importlib import resources
-from typing import Protocol
 
 
 class SupportsPlaySound(Protocol):

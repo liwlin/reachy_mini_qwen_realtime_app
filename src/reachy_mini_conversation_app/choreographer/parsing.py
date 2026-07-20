@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+
 _CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 _HEADER_RE = re.compile(r"^#\s*(name|description|bpm|duration_beats)\s*:\s*(.+?)\s*$", re.MULTILINE)
 
@@ -59,7 +60,7 @@ def extract_move_source(text: str) -> tuple[MoveHeader, str]:
     if not re.search(r"^def move\(", source, re.MULTILINE):
         raise ParseError("the code block must define a top-level function `def move(t_beats):`")
 
-    fields = {key: value for key, value in _HEADER_RE.findall(source)}
+    fields = dict(_HEADER_RE.findall(source))
     missing = [key for key in ("name", "description", "bpm", "duration_beats") if key not in fields]
     if missing:
         raise ParseError(

@@ -7,6 +7,7 @@ import pytest
 from reachy_mini_conversation_app.choreographer.bake import BakeError, bake_source
 from reachy_mini_conversation_app.choreographer.validator import validate_trajectory
 
+
 NOD_SOURCE = """
 def move(t_beats):
     params = OscillationParams(amplitude=0.15, subcycles_per_beat=1.0)
@@ -15,12 +16,14 @@ def move(t_beats):
 
 
 def test_simple_nod_bakes_to_valid_trajectory():
+    """Check simple nod bakes to valid trajectory."""
     move = bake_source(NOD_SOURCE, bpm=120, duration_beats=4)
     assert len(move["time"]) == int(2.0 * 50) + 1  # 4 beats at 120 bpm = 2 s
     assert validate_trajectory(move) == []
 
 
 def test_plain_math_source_works_without_library_helpers():
+    """Check plain math source works without library helpers."""
     source = """
 import math
 
@@ -37,21 +40,25 @@ def move(t_beats):
 
 
 def test_hanging_source_times_out():
+    """Check hanging source times out."""
     with pytest.raises(BakeError, match="timed out"):
         bake_source("while True:\n    pass", bpm=120, duration_beats=4, timeout_s=3)
 
 
 def test_syntax_error_reports_stderr():
+    """Check syntax error reports stderr."""
     with pytest.raises(BakeError, match="SyntaxError"):
         bake_source("def move(t_beats)\n    return None", bpm=120, duration_beats=4)
 
 
 def test_missing_move_function_rejected():
+    """Check missing move function rejected."""
     with pytest.raises(BakeError, match="must define"):
         bake_source("x = 1", bpm=120, duration_beats=4)
 
 
 def test_worker_environment_is_scrubbed(monkeypatch):
+    """Check worker environment is scrubbed."""
     monkeypatch.setenv("MY_SECRET_TOKEN", "hunter2")
     source = """
 import os
@@ -66,6 +73,7 @@ def move(t_beats):
 
 
 def test_printing_source_rejected_cleanly():
+    """Check printing source is rejected cleanly."""
     source = """
 def move(t_beats):
     print("noise")

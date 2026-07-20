@@ -6,6 +6,7 @@ import pytest
 
 from reachy_mini_conversation_app.choreographer.composer import MAX_ATTEMPTS, MoveComposer, MoveComposerError
 
+
 GOOD_REPLY = """```python
 # name: gentle_nod
 # description: a gentle nod
@@ -32,12 +33,14 @@ class FakeClient:
     """OpenAI-compatible stub returning scripted replies and recording messages."""
 
     def __init__(self, replies):
+        """Initialize the test double."""
         self.replies = list(replies)
         self.calls = []
         completions = SimpleNamespace(create=self._create)
         self.chat = SimpleNamespace(completions=completions)
 
     async def _create(self, *, model, messages, **kwargs):
+        """Create."""
         self.calls.append(list(messages))
         content = self.replies.pop(0)
         message = SimpleNamespace(content=content)
@@ -46,6 +49,7 @@ class FakeClient:
 
 @pytest.mark.asyncio
 async def test_happy_path_single_attempt():
+    """Check happy path single attempt."""
     composer = MoveComposer(client=FakeClient([GOOD_REPLY]), model="test-model")
     composed = await composer.compose("nod gently", kind="emotion")
     assert composed.name == "gentle_nod"
@@ -56,6 +60,7 @@ async def test_happy_path_single_attempt():
 
 @pytest.mark.asyncio
 async def test_validator_failure_feeds_back_and_retries():
+    """Check validator failure feeds back and retries."""
     client = FakeClient([UNSAFE_REPLY, GOOD_REPLY])
     composer = MoveComposer(client=client, model="test-model")
     composed = await composer.compose("nod")
@@ -68,6 +73,7 @@ async def test_validator_failure_feeds_back_and_retries():
 
 @pytest.mark.asyncio
 async def test_bake_failure_feeds_back_and_retries():
+    """Check bake failure feeds back and retries."""
     client = FakeClient([BROKEN_REPLY, GOOD_REPLY])
     composer = MoveComposer(client=client, model="test-model")
     composed = await composer.compose("nod")
@@ -77,6 +83,7 @@ async def test_bake_failure_feeds_back_and_retries():
 
 @pytest.mark.asyncio
 async def test_attempt_budget_exhausted_raises():
+    """Check attempt budget exhausted raises."""
     client = FakeClient([BROKEN_REPLY] * MAX_ATTEMPTS)
     composer = MoveComposer(client=client, model="test-model")
     with pytest.raises(MoveComposerError, match="after 3 attempts"):
@@ -85,6 +92,7 @@ async def test_attempt_budget_exhausted_raises():
 
 @pytest.mark.asyncio
 async def test_empty_reply_raises():
+    """Check empty reply raises."""
     client = FakeClient([None])
     composer = MoveComposer(client=client, model="test-model")
     with pytest.raises(MoveComposerError, match="empty reply"):

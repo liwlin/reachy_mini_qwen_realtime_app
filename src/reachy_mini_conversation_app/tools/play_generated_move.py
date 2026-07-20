@@ -6,7 +6,8 @@ from typing import Any, Dict
 
 from reachy_mini_conversation_app.generated_moves import GeneratedQueueMove
 from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
-from reachy_mini_conversation_app.choreographer.store import list_moves, load_move
+from reachy_mini_conversation_app.choreographer.store import load_move, list_moves
+
 
 logger = logging.getLogger(__name__)
 

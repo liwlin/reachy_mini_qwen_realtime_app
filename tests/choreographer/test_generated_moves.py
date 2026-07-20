@@ -10,6 +10,7 @@ from reachy_mini_conversation_app.generated_moves import GeneratedQueueMove
 
 
 def test_generated_queue_move_wraps_trajectory(make_move):
+    """Check generated queue move wraps trajectory."""
     move = GeneratedQueueMove(make_move(duration_s=2.0), name="wave")
     assert math.isclose(move.duration, 2.0, abs_tol=0.05)
     head, antennas, body_yaw = move.evaluate(0.5)
@@ -20,20 +21,26 @@ def test_generated_queue_move_wraps_trajectory(make_move):
 
 
 def test_generated_queue_move_interpolates_between_frames(make_move):
+    """Check generated queue move interpolates between frames."""
     move = GeneratedQueueMove(make_move(duration_s=2.0))
     quarter = move.evaluate(0.2501)[0]
     assert quarter is not None
 
 
 class FakeMedia:
+    """Test double: FakeMedia."""
+
     def __init__(self):
+        """Initialize the test double."""
         self.played = []
 
     def play_sound(self, sound_file: str) -> None:
+        """Play sound."""
         self.played.append(sound_file)
 
 
 def test_sounds_play_resolves_packaged_file():
+    """Check sounds play resolves packaged file."""
     media = FakeMedia()
     sounds.play(media, "move_ready.wav")
     assert len(media.played) == 1
@@ -41,6 +48,7 @@ def test_sounds_play_resolves_packaged_file():
 
 
 def test_sounds_play_rejects_paths():
+    """Check sounds play rejects paths."""
     with pytest.raises(ValueError):
         sounds.play(FakeMedia(), "../etc/passwd")
 

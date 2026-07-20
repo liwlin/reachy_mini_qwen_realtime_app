@@ -1,4 +1,4 @@
-"""Standalone test harness for the choreographer pipeline.
+r"""Standalone test harness for the choreographer pipeline.
 
 Runs the real codegen LLM -> bake -> validate pipeline without the
 conversation app::
@@ -15,8 +15,8 @@ from __future__ import annotations
 import sys
 import time
 import asyncio
-import argparse
 import logging
+import argparse
 
 from reachy_mini_conversation_app.choreographer.store import save_move
 from reachy_mini_conversation_app.choreographer.composer import MoveComposer, MoveComposerError, composer_model

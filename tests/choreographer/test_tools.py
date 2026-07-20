@@ -6,27 +6,37 @@ import pytest
 
 from reachy_mini_conversation_app.tools import create_move as create_move_module
 from reachy_mini_conversation_app.tools.create_move import CreateMove
-from reachy_mini_conversation_app.tools.play_generated_move import PlayGeneratedMove
 from reachy_mini_conversation_app.choreographer.store import save_move
 from reachy_mini_conversation_app.choreographer.composer import ComposedMove, MoveComposerError
+from reachy_mini_conversation_app.tools.play_generated_move import PlayGeneratedMove
+
 
 class FakeMovementManager:
+    """Test double: FakeMovementManager."""
+
     def __init__(self):
+        """Initialize the test double."""
         self.queued = []
 
     def queue_move(self, move):
+        """Queue move."""
         self.queued.append(move)
 
 
 class FakeMedia:
+    """Test double: FakeMedia."""
+
     def __init__(self):
+        """Initialize the test double."""
         self.played = []
 
     def play_sound(self, sound_file):
+        """Play sound."""
         self.played.append(sound_file)
 
 
 def make_deps(tmp_path):
+    """Make deps."""
     return SimpleNamespace(
         reachy_mini=SimpleNamespace(media=FakeMedia()),
         movement_manager=FakeMovementManager(),
@@ -35,6 +45,7 @@ def make_deps(tmp_path):
 
 
 def make_composed(move_dict, name="proud_strut"):
+    """Make composed."""
     return ComposedMove(
         name=name,
         description="a proud strut",
@@ -48,11 +59,15 @@ def make_composed(move_dict, name="proud_strut"):
 
 
 class FakeComposer:
+    """Test double: FakeComposer."""
+
     def __init__(self, result=None, error=None):
+        """Initialize the test double."""
         self._result = result
         self._error = error
 
     async def compose(self, brief, *, kind="emotion", duration_hint_beats=None):
+        """Compose."""
         if self._error:
             raise self._error
         return self._result
@@ -60,6 +75,7 @@ class FakeComposer:
 
 @pytest.mark.asyncio
 async def test_create_move_success_saves_chimes_and_queues(tmp_path, monkeypatch, make_move):
+    """Check create move success saves chimes and queues."""
     deps = make_deps(tmp_path)
     monkeypatch.setattr(
         create_move_module, "MoveComposer", lambda: FakeComposer(result=make_composed(make_move(duration_s=2.0)))
@@ -77,6 +93,7 @@ async def test_create_move_success_saves_chimes_and_queues(tmp_path, monkeypatch
 
 @pytest.mark.asyncio
 async def test_create_move_play_false_does_not_queue(tmp_path, monkeypatch, make_move):
+    """Check create move play false does not queue."""
     deps = make_deps(tmp_path)
     monkeypatch.setattr(
         create_move_module, "MoveComposer", lambda: FakeComposer(result=make_composed(make_move(duration_s=2.0)))
@@ -90,6 +107,7 @@ async def test_create_move_play_false_does_not_queue(tmp_path, monkeypatch, make
 
 @pytest.mark.asyncio
 async def test_create_move_reports_composer_failure(tmp_path, monkeypatch):
+    """Check create move reports composer failure."""
     deps = make_deps(tmp_path)
     monkeypatch.setattr(
         create_move_module,
@@ -105,12 +123,14 @@ async def test_create_move_reports_composer_failure(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_move_requires_brief(tmp_path):
+    """Check create move requires brief."""
     result = await CreateMove()(make_deps(tmp_path), brief="   ")
     assert "error" in result
 
 
 @pytest.mark.asyncio
 async def test_play_generated_move_lists_when_no_name(tmp_path, make_move):
+    """Check play generated move lists when no name."""
     deps = make_deps(tmp_path)
     save_move(tmp_path, make_composed(make_move(duration_s=2.0), "happy_hop"), brief="hop happily")
 
@@ -122,6 +142,7 @@ async def test_play_generated_move_lists_when_no_name(tmp_path, make_move):
 
 @pytest.mark.asyncio
 async def test_play_generated_move_queues_saved_move(tmp_path, make_move):
+    """Check play generated move queues saved move."""
     deps = make_deps(tmp_path)
     save_move(tmp_path, make_composed(make_move(duration_s=2.0), "happy_hop"), brief="hop")
 
@@ -133,6 +154,7 @@ async def test_play_generated_move_queues_saved_move(tmp_path, make_move):
 
 @pytest.mark.asyncio
 async def test_play_generated_move_unknown_name(tmp_path):
+    """Check play generated move unknown name."""
     result = await PlayGeneratedMove()(make_deps(tmp_path), name="ghost")
     assert "no generated move" in result["error"]
 

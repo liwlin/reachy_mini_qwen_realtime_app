@@ -123,7 +123,7 @@ def _check_start_pose(
     antennas: NDArray[np.float64],
     limits: SafetyLimits,
 ) -> list[str]:
-    """The first frame must be near neutral so queuing the move never jerks."""
+    """Require the first frame to be near neutral so queuing the move never jerks."""
     violations: list[str] = []
     start_pos = float(np.abs(positions[0]).max())
     start_angle = float(np.abs(angles[0]).max())

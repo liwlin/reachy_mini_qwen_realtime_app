@@ -9,49 +9,29 @@ from reachy_mini.utils import create_head_pose
 from reachy_mini_conversation_app.choreographer.limits import DEFAULT_LIMITS
 from reachy_mini_conversation_app.choreographer.validator import validate_trajectory
 
-FPS = 50.0
 
-
-def make_move(duration_s=4.0, pos_amp=0.02, angle_amp=math.radians(15), antenna_amp=math.radians(45), freq_hz=1.0):
-    """Build a gentle sinusoidal trajectory in the RecordedMove dict shape."""
-    n = int(duration_s * FPS) + 1
-    time = [i / FPS for i in range(n)]
-    frames = []
-    for t in time:
-        s = math.sin(2 * math.pi * freq_hz * t)
-        head = create_head_pose(0.0, pos_amp * s, 0.0, 0.0, angle_amp * s, 0.0, degrees=False)
-        frames.append(
-            {
-                "head": head.tolist(),
-                "antennas": [antenna_amp * s, -antenna_amp * s],
-                "body_yaw": 0.0,
-            }
-        )
-    return {"description": "test move", "time": time, "set_target_data": frames}
-
-
-def test_gentle_move_passes():
+def test_gentle_move_passes(make_move):
     assert validate_trajectory(make_move()) == []
 
 
-def test_excessive_position_amplitude_rejected():
+def test_excessive_position_amplitude_rejected(make_move):
     violations = validate_trajectory(make_move(pos_amp=0.09, freq_hz=0.2))
     assert any("head y offset" in v for v in violations)
 
 
-def test_excessive_rotation_velocity_rejected():
+def test_excessive_rotation_velocity_rejected(make_move):
     violations = validate_trajectory(make_move(angle_amp=math.radians(29), freq_hz=6.0))
     assert any("rotation velocity" in v for v in violations)
 
 
-def test_non_finite_values_rejected():
+def test_non_finite_values_rejected(make_move):
     move = make_move()
     move["set_target_data"][3]["antennas"][0] = float("nan")
     violations = validate_trajectory(move)
     assert any("non-finite" in v for v in violations)
 
 
-def test_offset_start_pose_rejected():
+def test_offset_start_pose_rejected(make_move):
     move = make_move()
     bad = create_head_pose(0.0, 0.03, 0.0, 0.0, 0.0, 0.0, degrees=False)
     move["set_target_data"][0]["head"] = bad.tolist()
@@ -59,37 +39,37 @@ def test_offset_start_pose_rejected():
     assert any("first frame" in v for v in violations)
 
 
-def test_too_short_move_rejected():
+def test_too_short_move_rejected(make_move):
     violations = validate_trajectory(make_move(duration_s=0.2))
     assert any("below the minimum" in v for v in violations)
 
 
-def test_too_long_move_rejected():
+def test_too_long_move_rejected(make_move):
     violations = validate_trajectory(make_move(duration_s=DEFAULT_LIMITS.max_duration_s + 5, freq_hz=0.5))
     assert any("exceeds the maximum" in v for v in violations)
 
 
-def test_structure_errors_reported():
+def test_structure_errors_reported(make_move):
     assert validate_trajectory({"time": [0, 1]}) == ["move must contain 'time' and 'set_target_data' lists"]
     move = make_move()
     move["time"] = move["time"][:-1]
     assert "entries" in validate_trajectory(move)[0]
 
 
-def test_non_monotonic_time_rejected():
+def test_non_monotonic_time_rejected(make_move):
     move = make_move()
     move["time"][5] = move["time"][4]
     assert validate_trajectory(move) == ["'time' must be strictly increasing"]
 
 
-def test_missing_body_yaw_defaults_to_zero():
+def test_missing_body_yaw_defaults_to_zero(make_move):
     move = make_move()
     for frame in move["set_target_data"]:
         frame["body_yaw"] = None
     assert validate_trajectory(move) == []
 
 
-def test_np_arrays_accepted_in_frames():
+def test_np_arrays_accepted_in_frames(make_move):
     move = make_move()
     for frame in move["set_target_data"]:
         frame["head"] = np.array(frame["head"])

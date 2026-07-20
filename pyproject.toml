@@ -59,6 +59,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 reachy_mini_conversation_app = [
   "static/**/*",
+  "sounds/*.wav",
   ".env.example",
 ]
 reachy_talk_data = [

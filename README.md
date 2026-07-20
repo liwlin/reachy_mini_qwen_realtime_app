@@ -199,6 +199,8 @@ The default profile exposes these tools. Custom profiles can enable a different 
 | `sweep_look` | Sweep Reachy's head left, right, and back to center. | Bundled default profile tool. |
 | `remember` | Save one short, stable fact about the user for future sessions. | Core install only. Stored in the app instance data directory. |
 | `forget` | Remove a saved memory fact by matching a short query. | Core install only. |
+| `create_move` | Invent a brand-new movement (emotion or dance) from a natural-language brief: a codegen LLM writes a symbolic move function, it is baked in an isolated subprocess, safety-validated, saved, then performed (with a ready chime). | Core install only. Uses a separate codegen LLM (defaults to the Hugging Face router with your `HF_TOKEN`; see `MOVE_COMPOSER_*` in `.env.example`). |
+| `play_generated_move` | Replay (or list) moves previously invented with `create_move`. | Core install only. |
 | `pollen_robotics_reachy_mini_search_tool__search_web` | Search the web and return a short list of results. | Preinstalled MCP Space: `pollen-robotics/reachy-mini-search-tool`. |
 | `pollen_robotics_reachy_mini_weather_tool__get_weather` | Report today's weather for a place: current conditions, high and low temperature, and rain chance. | Preinstalled MCP Space: `pollen-robotics/reachy-mini-weather-tool`. |
 | `pollen_robotics_reachy_mini_time_tool__get_time` | Report the current time for a timezone or the user's local time, or the difference between two timezones. | Preinstalled MCP Space: `pollen-robotics/reachy-mini-time-tool`. |
@@ -207,6 +209,26 @@ The default profile exposes these tools. Custom profiles can enable a different 
 > `remember`/`forget` facts are stored in `memory.v1.json` inside the app's instance data directory (`~/.local/share/reachy_mini_conversation_app/` by default, or the instance path used by the desktop launcher). `forget` only removes facts matched by query. To reset all remembered facts, delete this file.
 
 ## Advanced features
+
+### LLM Choreographer (generated moves)
+
+Ask the robot to *invent* a movement mid-conversation ("create a move that looks anxious"):
+the `create_move` tool sends the brief to a separate codegen LLM which writes a symbolic
+move function; the code runs in an isolated, robot-less subprocess that samples it into a
+trajectory; a numeric validator enforces amplitude/velocity safety caps; then the move is
+saved under `generated_moves/` in the instance data directory (trajectory + source +
+provenance), a chime plays, and the robot performs it. Replay anything later with
+`play_generated_move`.
+
+Test the pipeline standalone (no conversation session; add `--play` to run it on the robot):
+
+```bash
+uv run python -m reachy_mini_conversation_app.choreographer.cli "a shy, curious peek" --kind emotion
+```
+
+Configuration: `MOVE_COMPOSER_MODEL`, `MOVE_COMPOSER_BASE_URL`, `MOVE_COMPOSER_API_KEY`
+(defaults target the Hugging Face router using your `HF_TOKEN`).
+
 
 Built-in motion content is published as open Hugging Face datasets:
 - Emotions: [`pollen-robotics/reachy-mini-emotions-library`](https://huggingface.co/datasets/pollen-robotics/reachy-mini-emotions-library)

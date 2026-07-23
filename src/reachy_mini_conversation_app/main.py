@@ -45,6 +45,13 @@ def start_import_warmup() -> threading.Thread:
             try:
                 import scipy.spatial.transform  # noqa: F401
 
+                # AsyncOpenAI.realtime is a cached_property whose module tree
+                # (~1.6s on the CM4) otherwise loads lazily INSIDE the ws
+                # connect phase; same for the websockets client the SDK pulls
+                # in __aenter__. Importing openai above does NOT cover these.
+                import openai.resources.realtime  # noqa: F401
+                import websockets.asyncio.client  # noqa: F401
+
                 import reachy_mini_conversation_app.huggingface_realtime  # noqa: F401
             except Exception:
                 logging.getLogger(__name__).debug("Import warmup failed", exc_info=True)

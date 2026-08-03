@@ -14,7 +14,7 @@ import {
 } from "../api.js";
 import { h } from "../ui.js";
 import { ACTIVE_COMPANION_SETUP_STATES } from "../constants.js";
-import { buildCompanionOwnership } from "../components/companion-ownership.js";
+import { buildCompanionOwnership } from "../components/companion-owner.js";
 
 const HF_CONNECTION_MODES = Object.freeze({
   DEPLOYED: "deployed",

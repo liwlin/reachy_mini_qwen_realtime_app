@@ -9,7 +9,7 @@ import {
 import { h } from "../ui.js";
 import { ACTIVE_COMPANION_SETUP_STATES } from "../constants.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
-import { buildCompanionOwnership } from "../components/companion-ownership.js";
+import { buildCompanionOwnership } from "../components/companion-owner.js";
 
 const STATUS_LABELS = Object.freeze({
   queued: "Queued",

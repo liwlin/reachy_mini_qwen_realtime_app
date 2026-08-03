@@ -17,8 +17,10 @@ from reachy_mini_conversation_app.companion.provisioner import (
     ASSISTANT_DOCKERFILE,
     ProvisioningError,
     ProvisionedAssistant,
+    AssistantNamespaceKind,
     main,
     provision_assistant,
+    list_assistant_namespaces,
 )
 
 
@@ -27,16 +29,20 @@ BUCKET_ID = "alice/smolagents-assistant-reachy-mini-data"
 API_URL = "https://alice-smolagents-assistant-reachy-mini.hf.space"
 API_TOKEN = "a" * 32
 HF_TOKEN = "hf_oauth-token_123"
+ORG_NAMESPACE = "pollen-robotics"
+ORG_SPACE_ID = f"{ORG_NAMESPACE}/smolagents-assistant-reachy-mini"
+ORG_BUCKET_ID = f"{ORG_NAMESPACE}/smolagents-assistant-reachy-mini-data"
+ORG_API_URL = f"https://{ORG_NAMESPACE}-smolagents-assistant-reachy-mini.hf.space"
 
 
 def _not_found_response() -> httpx.Response:
     return httpx.Response(404, request=httpx.Request("GET", "https://huggingface.co/api/test"))
 
 
-def _expected_volume() -> Volume:
+def _expected_volume(bucket_id: str = BUCKET_ID) -> Volume:
     return Volume(
         type="bucket",
-        source=BUCKET_ID,
+        source=bucket_id,
         mount_path=STATE_MOUNT_PATH,
         read_only=False,
     )
@@ -76,7 +82,7 @@ def test_command_provisions_without_exposing_credentials(
     monkeypatch.setattr(
         sys,
         "stdin",
-        io.StringIO(json.dumps({"hf_token": HF_TOKEN, "api_token": API_TOKEN})),
+        io.StringIO(json.dumps({"hf_token": HF_TOKEN, "api_token": API_TOKEN, "namespace": "alice"})),
     )
 
     assert main() == 0
@@ -90,14 +96,40 @@ def test_command_provisions_without_exposing_credentials(
     assert captured.err == ""
     assert HF_TOKEN not in captured.out
     assert API_TOKEN not in captured.out
-    provision.assert_called_once_with(HF_TOKEN, API_TOKEN)
+    provision.assert_called_once_with(HF_TOKEN, API_TOKEN, "alice")
+
+
+@patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
+def test_namespace_list_contains_only_personal_and_writable_targets(api_class: MagicMock) -> None:
+    """Setup offers the account and organizations that can own the shared assistant."""
+    api_class.return_value.whoami.return_value = {
+        "name": "alice",
+        "orgs": [
+            {"name": "read-only", "roleInOrg": "read"},
+            {"name": "writers", "roleInOrg": "write"},
+            {"name": "admins", "roleInOrg": "admin"},
+            {"name": "contributors", "roleInOrg": "contributor"},
+        ],
+    }
+
+    namespaces = list_assistant_namespaces(HF_TOKEN)
+
+    assert [(namespace.name, namespace.kind) for namespace in namespaces] == [
+        ("alice", AssistantNamespaceKind.PERSONAL),
+        ("admins", AssistantNamespaceKind.ORGANIZATION),
+        ("contributors", AssistantNamespaceKind.ORGANIZATION),
+        ("writers", AssistantNamespaceKind.ORGANIZATION),
+    ]
 
 
 @patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
 def test_provision_assistant_creates_private_resources(api_class: MagicMock) -> None:
     """A clean account receives the current private, persistent runtime."""
     api = api_class.return_value
-    api.whoami.return_value = {"name": "alice"}
+    api.whoami.return_value = {
+        "name": "alice",
+        "orgs": [{"name": ORG_NAMESPACE, "roleInOrg": "write"}],
+    }
     api.bucket_info.side_effect = [
         BucketNotFoundError("missing", response=_not_found_response()),
         SimpleNamespace(private=True),
@@ -105,19 +137,19 @@ def test_provision_assistant_creates_private_resources(api_class: MagicMock) -> 
     api.space_info.side_effect = [
         RepositoryNotFoundError("missing", response=_not_found_response()),
         SimpleNamespace(private=True),
-        SimpleNamespace(private=True, host=API_URL),
+        SimpleNamespace(private=True, host=ORG_API_URL),
     ]
     api.wait_for_space.return_value = SimpleNamespace(stage="RUNNING")
 
-    provisioned = provision_assistant("hf_oauth_token", API_TOKEN)
+    provisioned = provision_assistant("hf_oauth_token", API_TOKEN, ORG_NAMESPACE)
 
     assert ASSISTANT_DOCKERFILE.startswith(
         b"FROM ghcr.io/alozowski/smolagents-assistant@"
         b"sha256:d04e612bc928398a320bc632de88c9927994cf24a508226e49a574ee216440bf\n"
     )
-    api.create_bucket.assert_called_once_with(BUCKET_ID, private=True, exist_ok=False)
+    api.create_bucket.assert_called_once_with(ORG_BUCKET_ID, private=True, exist_ok=False)
     api.create_repo.assert_called_once_with(
-        SPACE_ID,
+        ORG_SPACE_ID,
         repo_type="space",
         space_sdk="docker",
         private=True,
@@ -126,18 +158,33 @@ def test_provision_assistant_creates_private_resources(api_class: MagicMock) -> 
             {"key": "HF_TOKEN", "value": "hf_oauth_token"},
             {"key": "SMOL_ASSISTANT_API_TOKEN", "value": API_TOKEN},
         ],
-        space_volumes=[_expected_volume()],
+        space_volumes=[_expected_volume(ORG_BUCKET_ID)],
     )
     api.upload_file.assert_called_once_with(
         path_or_fileobj=ASSISTANT_DOCKERFILE,
         path_in_repo="Dockerfile",
-        repo_id=SPACE_ID,
+        repo_id=ORG_SPACE_ID,
         repo_type="space",
         commit_message="Configure assistant runtime",
     )
-    assert provisioned.space_id == SPACE_ID
-    assert provisioned.bucket_id == BUCKET_ID
-    assert provisioned.api_url == API_URL
+    assert provisioned.space_id == ORG_SPACE_ID
+    assert provisioned.bucket_id == ORG_BUCKET_ID
+    assert provisioned.api_url == ORG_API_URL
+
+
+@patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
+def test_provision_assistant_rejects_unavailable_namespace_before_mutation(api_class: MagicMock) -> None:
+    """Unchecked browser input cannot redirect managed resource creation."""
+    api = api_class.return_value
+    api.whoami.return_value = {"name": "alice", "orgs": [{"name": "read-only", "roleInOrg": "read"}]}
+
+    with pytest.raises(ProvisioningError, match="not available"):
+        provision_assistant(HF_TOKEN, API_TOKEN, "read-only")
+
+    api.bucket_info.assert_not_called()
+    api.space_info.assert_not_called()
+    api.create_bucket.assert_not_called()
+    api.create_repo.assert_not_called()
 
 
 @patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
@@ -153,7 +200,7 @@ def test_provision_assistant_recreates_space_over_existing_bucket(api_class: Mag
     ]
     api.wait_for_space.return_value = SimpleNamespace(stage="RUNNING")
 
-    provisioned = provision_assistant("hf_oauth_token", API_TOKEN)
+    provisioned = provision_assistant("hf_oauth_token", API_TOKEN, "alice")
 
     api.create_bucket.assert_not_called()
     api.create_repo.assert_called_once()
@@ -181,7 +228,7 @@ def test_provision_assistant_finishes_interrupted_setup(api_class: MagicMock, tm
     ]
     api.wait_for_space.return_value = SimpleNamespace(stage="RUNNING")
 
-    provision_assistant("hf_oauth_token", API_TOKEN)
+    provision_assistant("hf_oauth_token", API_TOKEN, "alice")
 
     api.create_bucket.assert_not_called()
     api.create_repo.assert_not_called()
@@ -226,7 +273,7 @@ def test_provision_assistant_rejects_non_exact_resources(
         api.get_space_secrets.return_value = {"HF_TOKEN": SimpleNamespace()}
 
     with pytest.raises(ProvisioningError):
-        provision_assistant("hf_oauth_token", API_TOKEN)
+        provision_assistant("hf_oauth_token", API_TOKEN, "alice")
 
     api.create_bucket.assert_not_called()
     api.create_repo.assert_not_called()

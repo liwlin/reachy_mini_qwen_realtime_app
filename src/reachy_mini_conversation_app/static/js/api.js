@@ -147,7 +147,9 @@ export const saveBackendConfig = (payload) => rpcCall("backend.config", payload)
 export const getCompanionConfig = () => rpcCall("companion.config.get");
 export const saveCompanionConfig = (enabled) =>
   rpcCall("companion.config.save", { enabled });
-export const startCompanionSetup = () => rpcCall("companion.setup.start");
+export const getCompanionNamespaces = () => rpcCall("companion.setup.namespaces");
+export const startCompanionSetup = (namespace) =>
+  rpcCall("companion.setup.start", { namespace });
 
 export const listToolSpaces = () => rpcCall("tool_spaces.list");
 export const addToolSpace = (slug) =>
@@ -195,6 +197,9 @@ const ERROR_MESSAGES = Object.freeze({
   companion_settings_save_failed: "The background-assistant setting could not be saved.",
   companion_hf_login_required:
     "Sign in to Hugging Face on this device with hf auth login, then try again.",
+  invalid_companion_namespace: "Choose an available Hugging Face account or organization.",
+  companion_namespace_lookup_failed:
+    "The available Hugging Face accounts and organizations could not be loaded.",
   companion_setup_overridden:
     "Remove SMOL_ASSISTANT_API_URL and SMOL_ASSISTANT_API_TOKEN before using automatic setup.",
   companion_setup_failed: "The background assistant could not be set up.",

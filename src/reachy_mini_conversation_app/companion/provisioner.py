@@ -45,6 +45,21 @@ class AssistantDiscoveryState(str, Enum):
     MANAGED = "managed"
 
 
+class AssistantNamespaceKind(str, Enum):
+    """Describe who owns managed assistant resources."""
+
+    PERSONAL = "personal"
+    ORGANIZATION = "organization"
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantNamespace:
+    """Describe one namespace eligible for managed setup."""
+
+    name: str
+    kind: AssistantNamespaceKind
+
+
 @dataclass(frozen=True, slots=True)
 class AssistantDiscovery:
     """Describe canonical assistant resources without retaining credentials."""
@@ -76,14 +91,40 @@ def _is_visible_ascii(value: str, min_chars: int) -> bool:
     )
 
 
-def _inspect_assistant(api: HfApi) -> tuple[AssistantDiscovery, str | None]:
+def _assistant_namespaces(api: HfApi) -> tuple[AssistantNamespace, ...]:
     identity = api.whoami()
     username = identity.get("name")
     if not isinstance(username, str) or not username:
         raise ProvisioningError("Hugging Face did not return an account name.")
 
-    bucket_id = f"{username}/{ASSISTANT_BUCKET_NAME}"
-    space_id = f"{username}/{ASSISTANT_SPACE_NAME}"
+    namespaces = [AssistantNamespace(username, AssistantNamespaceKind.PERSONAL)]
+    organizations = identity.get("orgs")
+    if isinstance(organizations, list):
+        writable_organizations = {
+            organization["name"]
+            for organization in organizations
+            if isinstance(organization, dict)
+            and isinstance(organization.get("name"), str)
+            and organization["name"]
+            and organization.get("roleInOrg") in {"contributor", "write", "admin"}
+        }
+        namespaces.extend(
+            AssistantNamespace(name, AssistantNamespaceKind.ORGANIZATION)
+            for name in sorted(writable_organizations - {username}, key=str.casefold)
+        )
+    return tuple(namespaces)
+
+
+def list_assistant_namespaces(hf_token: str) -> tuple[AssistantNamespace, ...]:
+    """List personal and writable organization setup targets."""
+    if not _is_visible_ascii(hf_token, 1):
+        raise ProvisioningError("A valid Hugging Face credential is required.")
+    return _assistant_namespaces(HfApi(token=hf_token))
+
+
+def _inspect_assistant(api: HfApi, namespace: str) -> tuple[AssistantDiscovery, str | None]:
+    bucket_id = f"{namespace}/{ASSISTANT_BUCKET_NAME}"
+    space_id = f"{namespace}/{ASSISTANT_SPACE_NAME}"
     try:
         bucket = api.bucket_info(bucket_id)
     except BucketNotFoundError:
@@ -117,7 +158,7 @@ def _inspect_assistant(api: HfApi) -> tuple[AssistantDiscovery, str | None]:
             ),
             None,
         )
-    if space.id != space_id or space.author != username or space.private is not True or space.sdk != "docker":
+    if space.id != space_id or space.author != namespace or space.private is not True or space.sdk != "docker":
         raise ProvisioningError(f"Existing Space {space_id} is not the expected private Docker resource.")
     if space.sha is None:
         raise ProvisioningError(f"Existing Space {space_id} has no readable revision.")
@@ -166,10 +207,11 @@ def _inspect_assistant(api: HfApi) -> tuple[AssistantDiscovery, str | None]:
 def provision_assistant(
     hf_token: str,
     api_token: str,
+    namespace: str,
     *,
     timeout: float = DEFAULT_PROVISIONING_TIMEOUT,
 ) -> ProvisionedAssistant:
-    """Provision the signed-in user's canonical assistant resources."""
+    """Provision canonical assistant resources in an eligible namespace."""
     if not _is_visible_ascii(hf_token, 1):
         raise ProvisioningError("A valid Hugging Face credential is required.")
     if not _is_visible_ascii(api_token, MIN_API_TOKEN_CHARS):
@@ -180,7 +222,10 @@ def provision_assistant(
         raise ProvisioningError("The provisioning timeout must be greater than zero.")
 
     api = HfApi(token=hf_token)
-    discovery, space_revision = _inspect_assistant(api)
+    available_namespaces = _assistant_namespaces(api)
+    if namespace not in {candidate.name for candidate in available_namespaces}:
+        raise ProvisioningError("The selected Hugging Face namespace is not available for assistant setup.")
+    discovery, space_revision = _inspect_assistant(api, namespace)
     expected_volume = Volume(
         type="bucket",
         source=discovery.bucket_id,
@@ -259,21 +304,33 @@ def run_provisioning_command(input_stream: TextIO, output_stream: TextIO) -> Non
         request: object = json.loads(document)
     except json.JSONDecodeError as exc:
         raise ProvisioningRequestError("The provisioning request is not valid JSON.") from exc
-    if not isinstance(request, dict) or set(request) != {"hf_token", "api_token"}:
+    if not isinstance(request, dict) or set(request) != {"hf_token", "api_token", "namespace"}:
         raise ProvisioningRequestError("The provisioning request has an invalid shape.")
     hf_token = request["hf_token"]
     api_token = request["api_token"]
-    if not isinstance(hf_token, str) or not isinstance(api_token, str):
+    namespace = request["namespace"]
+    if not isinstance(hf_token, str) or not isinstance(api_token, str) or not isinstance(namespace, str):
         raise ProvisioningRequestError("The provisioning request contains invalid credentials.")
     try:
-        provisioned = provision_assistant(hf_token, api_token)
+        provisioned = provision_assistant(hf_token, api_token, namespace)
         payload = {
             "space_id": provisioned.space_id,
             "bucket_id": provisioned.bucket_id,
             "api_url": provisioned.api_url,
         }
     except HfHubHTTPError as exc:
-        raise ProvisioningError("Hugging Face could not inspect or provision the assistant.") from exc
+        if exc.response.status_code == 401:
+            message = "Hugging Face rejected the token. Sign in again and retry setup."
+        elif exc.response.status_code == 402:
+            message = (
+                "The selected namespace cannot create a private Docker Space. "
+                "Personal accounts need PRO; organizations need Team or Enterprise."
+            )
+        elif exc.response.status_code == 403:
+            message = "The token cannot create or update resources in the selected namespace."
+        else:
+            message = "Hugging Face could not inspect or provision the assistant."
+        raise ProvisioningError(message) from exc
     json.dump(payload, output_stream, separators=(",", ":"))
     output_stream.write("\n")
 

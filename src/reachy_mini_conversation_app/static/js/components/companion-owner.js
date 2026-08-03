@@ -1,16 +1,16 @@
-/** Render links to the exact user-owned managed assistant resources. */
+/** Render links to the exact managed assistant resources. */
 
 import { h } from "../ui.js";
 
 export function buildCompanionOwnership() {
-  const ownerLabel = h("strong");
+  const namespaceLabel = h("strong");
   const spaceLink = h("a", { target: "_blank", rel: "noopener noreferrer" }, "Space");
   const bucketLink = h("a", { target: "_blank", rel: "noopener noreferrer" }, "Storage");
   const element = h(
     "p",
     { class: "companion-ownership", hidden: "hidden" },
-    "Owned by ",
-    ownerLabel,
+    "Hugging Face namespace ",
+    namespaceLabel,
     h("span", { "aria-hidden": "true" }, " · "),
     spaceLink,
     h("span", { "aria-hidden": "true" }, " · "),
@@ -20,8 +20,8 @@ export function buildCompanionOwnership() {
   return {
     element,
     render(setup) {
-      const owner = typeof setup?.owner === "string" ? setup.owner : "";
-      if (!owner || typeof setup?.space_url !== "string" || typeof setup?.bucket_url !== "string") {
+      const namespace = typeof setup?.namespace === "string" ? setup.namespace : "";
+      if (!namespace || typeof setup?.space_url !== "string" || typeof setup?.bucket_url !== "string") {
         element.hidden = true;
         return;
       }
@@ -49,7 +49,7 @@ export function buildCompanionOwnership() {
         !bucketUrl.hash;
       element.hidden = !valid;
       if (!valid) return;
-      ownerLabel.textContent = `@${owner}`;
+      namespaceLabel.textContent = `@${namespace}`;
       spaceLink.href = spaceUrl.href;
       bucketLink.href = bucketUrl.href;
     },

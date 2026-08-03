@@ -9,6 +9,7 @@ from dataclasses import replace
 from collections.abc import Callable, Coroutine
 
 from huggingface_hub import get_token
+from huggingface_hub.errors import HfHubHTTPError
 
 from reachy_mini.io.jsonrpc import JsonRpcError
 from reachy_mini.apps.jsonrpc_server import JsonRpcServer
@@ -27,6 +28,11 @@ from reachy_mini_conversation_app.companion.client import (
 )
 from reachy_mini_conversation_app.companion.settings import read_companion_settings, write_companion_settings
 from reachy_mini_conversation_app.companion.coordinator import CompanionTaskCoordinator
+from reachy_mini_conversation_app.companion.provisioner import (
+    ProvisioningError,
+    AssistantNamespace,
+    list_assistant_namespaces,
+)
 
 
 ResultT = TypeVar("ResultT")
@@ -92,13 +98,16 @@ def register_companion_methods(
     setup = CompanionSetup(instance_path)
     companion_available = companion_tasks is not None
     setup_started = False
+    namespace_cache: tuple[AssistantNamespace, ...] | None = None
     environment_override = SMOL_ASSISTANT_API_URL_ENV in os.environ or SMOL_ASSISTANT_API_TOKEN_ENV in os.environ
 
     def _config_payload() -> dict[str, object]:
         setup_status = setup.status(configured=companion_available)
         if environment_override:
             setup_status = {
-                key: value for key, value in setup_status.items() if key not in {"owner", "space_url", "bucket_url"}
+                key: value
+                for key, value in setup_status.items()
+                if key not in {"namespace", "space_url", "bucket_url"}
             }
         return {
             "configured": companion_available,
@@ -135,6 +144,39 @@ def register_companion_methods(
             await _load_tasks(retry_unavailable=True)
         return _config_payload()
 
+    async def _available_namespaces() -> tuple[str, tuple[AssistantNamespace, ...]]:
+        nonlocal namespace_cache
+        hf_token = (config.HF_TOKEN or "").strip() or (get_token() or "").strip()
+        if not hf_token:
+            raise _companion_error(
+                "companion_hf_login_required",
+                "Sign in to Hugging Face on this device, then try again.",
+            )
+        if namespace_cache is None:
+            try:
+                namespaces = await asyncio.to_thread(list_assistant_namespaces, hf_token)
+            except HfHubHTTPError as exc:
+                logger.warning("Hugging Face namespace lookup failed: %s", exc)
+                detail = (
+                    "Hugging Face rejected the token. Sign in again and retry."
+                    if exc.response.status_code == 401
+                    else "Hugging Face could not list the available organizations."
+                )
+                raise _companion_error("companion_namespace_lookup_failed", detail) from exc
+            except ProvisioningError as exc:
+                raise _companion_error("companion_namespace_lookup_failed", str(exc)) from exc
+            namespace_cache = namespaces
+        return hf_token, namespace_cache
+
+    async def _list_namespaces(_params: dict[str, Any]) -> dict[str, object]:
+        if environment_override:
+            raise _companion_error(
+                "companion_setup_overridden",
+                "Remove the developer assistant override before using automatic setup.",
+            )
+        _, namespaces = await _available_namespaces()
+        return {"namespaces": [{"name": namespace.name, "kind": namespace.kind.value} for namespace in namespaces]}
+
     def _save_config(params: dict[str, Any]) -> dict[str, object]:
         enabled = params.get("enabled")
         if not isinstance(enabled, bool):
@@ -169,7 +211,7 @@ def register_companion_methods(
             "message": f"Background assistant {'enabled' if enabled else 'disabled'}. {apply_detail}",
         }
 
-    def _start_setup(_params: dict[str, Any]) -> dict[str, object]:
+    async def _start_setup(params: dict[str, Any]) -> dict[str, object]:
         nonlocal setup_started
         if companion_available:
             return _config_payload()
@@ -178,14 +220,22 @@ def register_companion_methods(
                 "companion_setup_overridden",
                 "Remove the developer assistant override before using automatic setup.",
             )
-        hf_token = (config.HF_TOKEN or "").strip() or (get_token() or "").strip()
-        if not hf_token:
+        namespace = params.get("namespace")
+        if set(params) != {"namespace"} or not isinstance(namespace, str) or not namespace:
             raise _companion_error(
-                "companion_hf_login_required",
-                "Sign in to Hugging Face on this device, then try again.",
+                "invalid_companion_namespace",
+                "Choose a Hugging Face account or organization.",
+                code=-32602,
+            )
+        hf_token, available_namespaces = await _available_namespaces()
+        if namespace not in {candidate.name for candidate in available_namespaces}:
+            raise _companion_error(
+                "invalid_companion_namespace",
+                "The selected Hugging Face namespace is not available for assistant setup.",
+                code=-32602,
             )
         try:
-            setup.start(hf_token)
+            setup.start(hf_token, namespace)
         except CompanionSetupError as exc:
             raise _companion_error("companion_setup_failed", str(exc)) from exc
         setup_started = True
@@ -255,6 +305,7 @@ def register_companion_methods(
 
     rpc.register("companion.config.get", _get_config)
     rpc.register("companion.config.save", _save_config)
+    rpc.register("companion.setup.namespaces", _list_namespaces)
     rpc.register("companion.setup.start", _start_setup)
     rpc.register("companion.tasks.list", _list_tasks)
     rpc.register("companion.tasks.result", _read_result)

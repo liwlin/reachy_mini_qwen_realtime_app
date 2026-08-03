@@ -1,4 +1,4 @@
-"""Provision and activate a user-owned background assistant."""
+"""Provision and activate a managed background assistant."""
 
 import os
 import sys
@@ -29,6 +29,7 @@ PROVISIONER_MODULE = "reachy_mini_conversation_app.companion.provisioner"
 MANAGED_API_HOST_SUFFIX = f"-{ASSISTANT_SPACE_NAME}.hf.space"
 PROVISIONING_TIMEOUT_SECONDS = DEFAULT_PROVISIONING_TIMEOUT + 120.0
 MAX_PROVISIONING_OUTPUT_BYTES = 8_192
+MAX_PROVISIONING_ERROR_CHARS = 500
 VERIFICATION_ATTEMPTS = 5
 VERIFICATION_RETRY_SECONDS = 2.0
 _CHILD_CREDENTIAL_ENVIRONMENT = {
@@ -86,7 +87,7 @@ async def _run_provisioner(request: dict[str, object]) -> dict[str, object]:
 
     encoded_request = json.dumps(request, separators=(",", ":")).encode()
     try:
-        stdout, _ = await asyncio.wait_for(
+        stdout, stderr = await asyncio.wait_for(
             process.communicate(encoded_request),
             timeout=PROVISIONING_TIMEOUT_SECONDS,
         )
@@ -101,6 +102,24 @@ async def _run_provisioner(request: dict[str, object]) -> dict[str, object]:
         raise CompanionSetupError("The bundled assistant setup stopped unexpectedly.") from exc
 
     if process.returncode != 0:
+        try:
+            error_lines = stderr.decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            error_lines = []
+        credentials: set[str] = set()
+        for key in ("hf_token", "api_token"):
+            value = request.get(key)
+            if isinstance(value, str):
+                credentials.add(value)
+        for line in reversed(error_lines):
+            if line.startswith("ERROR: "):
+                detail = line.removeprefix("ERROR: ").strip()
+                if (
+                    detail
+                    and len(detail) <= MAX_PROVISIONING_ERROR_CHARS
+                    and all(credential not in detail for credential in credentials)
+                ):
+                    raise CompanionSetupError(detail)
         raise CompanionSetupError("Hugging Face could not finish setting up the assistant.")
     if not stdout or len(stdout) > MAX_PROVISIONING_OUTPUT_BYTES:
         raise CompanionSetupError("The assistant setup returned an invalid response.")
@@ -113,51 +132,52 @@ async def _run_provisioner(request: dict[str, object]) -> dict[str, object]:
     return payload
 
 
-def _validate_resource_ids(space_id: str, bucket_id: str) -> str:
-    space_owner, separator, space_name = space_id.partition("/")
-    bucket_owner, bucket_separator, bucket_name = bucket_id.partition("/")
+def _validate_resource_ids(space_id: str, bucket_id: str, namespace: str) -> None:
+    space_namespace, separator, space_name = space_id.partition("/")
+    bucket_namespace, bucket_separator, bucket_name = bucket_id.partition("/")
     if (
         not separator
         or not bucket_separator
-        or not space_owner
-        or space_owner != bucket_owner
+        or space_namespace != namespace
+        or bucket_namespace != namespace
         or space_name != ASSISTANT_SPACE_NAME
         or bucket_name != ASSISTANT_BUCKET_NAME
     ):
         raise CompanionSetupError("The assistant setup returned unexpected resources.")
-    return space_owner
 
 
 def _managed_resource_metadata(api_url: str) -> dict[str, str]:
     hostname = urlsplit(api_url).hostname or ""
     if not hostname.endswith(MANAGED_API_HOST_SUFFIX):
         return {}
-    owner = hostname[: -len(MANAGED_API_HOST_SUFFIX)]
+    namespace = hostname[: -len(MANAGED_API_HOST_SUFFIX)]
     if (
-        not owner
-        or not owner.isascii()
-        or owner.startswith("-")
-        or owner.endswith("-")
-        or any(not (character.isalnum() or character == "-") for character in owner)
+        not namespace
+        or not namespace.isascii()
+        or namespace.startswith("-")
+        or namespace.endswith("-")
+        or any(not (character.isalnum() or character == "-") for character in namespace)
     ):
         return {}
-    quoted_owner = quote(owner, safe="")
+    quoted_namespace = quote(namespace, safe="")
     return {
-        "owner": owner,
-        "space_url": f"https://huggingface.co/spaces/{quoted_owner}/{ASSISTANT_SPACE_NAME}",
-        "bucket_url": f"https://huggingface.co/buckets/{quoted_owner}/{ASSISTANT_BUCKET_NAME}",
+        "namespace": namespace,
+        "space_url": f"https://huggingface.co/spaces/{quoted_namespace}/{ASSISTANT_SPACE_NAME}",
+        "bucket_url": f"https://huggingface.co/buckets/{quoted_namespace}/{ASSISTANT_BUCKET_NAME}",
     }
 
 
 async def provision_companion(
     hf_token: str,
     api_token: str,
+    namespace: str,
 ) -> str:
-    """Provision the signed-in user's canonical assistant."""
+    """Provision the selected namespace's canonical assistant."""
     payload = await _run_provisioner(
         {
             "hf_token": hf_token,
             "api_token": api_token,
+            "namespace": namespace,
         }
     )
     if set(payload) != {"space_id", "bucket_id", "api_url"}:
@@ -167,12 +187,12 @@ async def provision_companion(
     api_url = payload["api_url"]
     if not isinstance(space_id, str) or not isinstance(bucket_id, str) or not isinstance(api_url, str):
         raise CompanionSetupError("The assistant setup returned an invalid response.")
-    space_owner = _validate_resource_ids(space_id, bucket_id)
+    _validate_resource_ids(space_id, bucket_id, namespace)
     try:
         normalized_api_url = normalize_companion_api_url(api_url, hosted_only=True)
     except ValueError as exc:
         raise CompanionSetupError("The assistant setup returned an invalid endpoint.") from exc
-    expected_hostname = f"{space_owner}-{ASSISTANT_SPACE_NAME}.hf.space".lower()
+    expected_hostname = f"{namespace}-{ASSISTANT_SPACE_NAME}.hf.space".lower()
     if urlsplit(normalized_api_url).hostname != expected_hostname:
         raise CompanionSetupError("The assistant setup returned an unexpected endpoint.")
     return normalized_api_url
@@ -188,7 +208,7 @@ class CompanionSetup:
         self._resource_metadata = _managed_resource_metadata(settings.api_url) if settings.api_url else {}
         if settings.api_url is None:
             self._state = CompanionSetupState.IDLE
-            self._message = "Create a private assistant and private storage in your Hugging Face account."
+            self._message = "Choose a Hugging Face account or organization for the private assistant."
         else:
             self._state = CompanionSetupState.FAILED
             self._message = "The saved assistant is not active. Check your Hugging Face sign-in and try setup again."
@@ -213,25 +233,24 @@ class CompanionSetup:
             self._resource_metadata = _managed_resource_metadata(settings.api_url) if settings.api_url else {}
             return
         self._state = CompanionSetupState.FAILED
-        self._message = "The saved assistant is unavailable. Turn it on to reconnect or recreate it."
+        self._message = "The saved assistant is unavailable. Choose a namespace to reconnect or replace it."
         self._resource_metadata = {}
 
-    def start(self, hf_token: str) -> None:
-        """Create or reconnect the signed-in user's assistant."""
+    def start(self, hf_token: str, namespace: str) -> None:
+        """Create or reconnect an assistant in the selected namespace."""
         if self._task is not None and not self._task.done():
             return
         if self._state == CompanionSetupState.RESTART_REQUIRED:
             raise CompanionSetupError("Restart the Conversation App to finish setup.")
         self._state = CompanionSetupState.PROVISIONING
-        self._message = "Preparing your private assistant and storage…"
+        self._message = f"Preparing private assistant and storage in @{namespace}…"
         self._resource_metadata = {}
-        self._task = asyncio.create_task(self._run(hf_token))
+        self._task = asyncio.create_task(self._run(hf_token, namespace))
 
-    async def _run(self, hf_token: str) -> None:
+    async def _run(self, hf_token: str, namespace: str) -> None:
         try:
             api_token = secrets.token_urlsafe(32)
-            api_url = await provision_companion(hf_token, api_token)
-            self._resource_metadata = _managed_resource_metadata(api_url)
+            api_url = await provision_companion(hf_token, api_token, namespace)
             self._state = CompanionSetupState.VERIFYING
             self._message = "Checking the private assistant connection…"
             client = CompanionClient(api_url, api_token, hf_token)
@@ -250,16 +269,21 @@ class CompanionSetup:
                 self._instance_path,
                 CompanionSettings(enabled=True, api_url=api_url, api_token=api_token),
             )
+            self._resource_metadata = _managed_resource_metadata(api_url)
         except asyncio.CancelledError:
             raise
-        except (CompanionSetupError, CompanionClientError, OSError, ValueError) as exc:
+        except CompanionSetupError as exc:
             logger.warning("Background assistant setup failed: %s", exc)
             self._state = CompanionSetupState.FAILED
-            self._message = "Setup could not finish safely. Check your Hugging Face account and try again."
+            self._message = str(exc)
+        except (CompanionClientError, OSError, ValueError) as exc:
+            logger.warning("Background assistant setup failed: %s", exc)
+            self._state = CompanionSetupState.FAILED
+            self._message = "Setup could not finish safely. Check the selected Hugging Face namespace and try again."
         except Exception:
             logger.exception("Background assistant setup failed unexpectedly")
             self._state = CompanionSetupState.FAILED
-            self._message = "Setup could not finish safely. Check your Hugging Face account and try again."
+            self._message = "Setup could not finish safely. Check the selected Hugging Face namespace and try again."
         else:
             self._state = CompanionSetupState.RESTART_REQUIRED
             self._message = "Assistant set up. Restart the Conversation App to activate it."

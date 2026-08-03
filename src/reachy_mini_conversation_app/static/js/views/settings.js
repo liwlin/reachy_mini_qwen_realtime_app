@@ -4,6 +4,7 @@ import {
   applyVoice,
   describeError,
   getCompanionConfig,
+  getCompanionNamespaces,
   getCurrentVoice,
   getStatus,
   listVoices,
@@ -72,7 +73,33 @@ function buildAssistantSection({ signal }) {
   const setupDescription = h(
     "p",
     { id: "companion-setup-hint", class: "settings-hint", hidden: "hidden" },
-    "Turning this on creates or reconnects a private Space and Bucket in your Hugging Face account."
+    "Private Docker Spaces require PRO for personal accounts or Team/Enterprise for organizations. Organization access rules apply."
+  );
+  const namespaceSelect = h(
+    "select",
+    {
+      class: "settings-select",
+      name: "companion_namespace",
+      "aria-describedby": "companion-setup-hint companion-setup-status",
+      disabled: "disabled",
+    },
+    h("option", { value: "" }, "Loading accounts and organizations…")
+  );
+  const namespaceField = h(
+    "label",
+    { class: "settings-field", hidden: "hidden" },
+    h("span", { class: "settings-label" }, "Hugging Face namespace"),
+    namespaceSelect
+  );
+  const setupButton = h(
+    "button",
+    { type: "submit", class: "btn btn--primary", disabled: "disabled" },
+    "Set up assistant"
+  );
+  const setupActions = h(
+    "div",
+    { class: "settings-actions", hidden: "hidden" },
+    setupButton
   );
   const checkbox = h("input", {
     type: "checkbox",
@@ -113,10 +140,12 @@ function buildAssistantSection({ signal }) {
   );
   const ownership = buildCompanionOwnership();
   const controls = h(
-    "div",
+    "form",
     { class: "settings-form" },
     choice,
+    namespaceField,
     setupDescription,
+    setupActions,
     progress,
     status,
     ownership.element
@@ -130,14 +159,17 @@ function buildAssistantSection({ signal }) {
   let configured = false;
   let savedEnabled = false;
   let setupState = "idle";
+  let namespacesLoaded = false;
   let changing = false;
   let polling = false;
 
   function syncControl() {
     const setupBusy = ACTIVE_COMPANION_SETUP_STATES.includes(setupState);
     const unavailable = changing || setupBusy || setupState === "restart_required";
-    checkbox.disabled = unavailable;
-    choice.classList.toggle("is-disabled", unavailable);
+    checkbox.disabled = !configured || unavailable;
+    choice.classList.toggle("is-disabled", !configured || unavailable);
+    namespaceSelect.disabled = configured || unavailable || !namespacesLoaded;
+    setupButton.disabled = configured || unavailable || !namespacesLoaded || !namespaceSelect.value;
     controls.setAttribute("aria-busy", changing || setupBusy ? "true" : "false");
   }
 
@@ -146,11 +178,11 @@ function buildAssistantSection({ signal }) {
     savedEnabled = configured && payload?.enabled === true;
     setupState = payload?.setup?.state || "idle";
     const setupBusy = ACTIVE_COMPANION_SETUP_STATES.includes(setupState);
-    checkbox.checked = configured
-      ? savedEnabled
-      : setupBusy || setupState === "restart_required";
-    choice.hidden = false;
+    checkbox.checked = savedEnabled;
+    choice.hidden = !configured;
     const showSetupDescription = !configured && setupState !== "restart_required";
+    namespaceField.hidden = !showSetupDescription;
+    setupActions.hidden = !showSetupDescription;
     setupDescription.hidden = !showSetupDescription;
     checkbox.setAttribute(
       "aria-describedby",
@@ -165,6 +197,43 @@ function buildAssistantSection({ signal }) {
       ? message || (savedEnabled ? "Assistant ready for every personality." : "Turned off.")
       : payload?.setup?.message ||
         "Set up a private background assistant to delegate longer tasks.";
+    syncControl();
+  }
+
+  function setNamespaces(namespaces) {
+    const selected = namespaceSelect.value;
+    const validNamespaces = Array.isArray(namespaces)
+      ? namespaces.filter(
+          (namespace) =>
+            typeof namespace?.name === "string" &&
+            ["personal", "organization"].includes(namespace?.kind)
+        )
+      : [];
+    namespaceSelect.replaceChildren();
+    if (!validNamespaces.length) {
+      namespaceSelect.appendChild(h("option", { value: "" }, "No writable namespaces available"));
+      namespacesLoaded = false;
+      syncControl();
+      return;
+    }
+    if (validNamespaces.length > 1) {
+      namespaceSelect.appendChild(
+        h("option", { value: "" }, "Choose an account or organization")
+      );
+    }
+    for (const namespace of validNamespaces) {
+      namespaceSelect.appendChild(
+        h(
+          "option",
+          { value: namespace.name },
+          `@${namespace.name} (${namespace.kind === "personal" ? "personal" : "organization"})`
+        )
+      );
+    }
+    if (validNamespaces.some((namespace) => namespace.name === selected)) {
+      namespaceSelect.value = selected;
+    }
+    namespacesLoaded = true;
     syncControl();
   }
 
@@ -184,21 +253,41 @@ function buildAssistantSection({ signal }) {
     }
   }
 
+  namespaceSelect.addEventListener("change", syncControl);
+
+  controls.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (changing || setupButton.disabled) return;
+    changing = true;
+    syncControl();
+    status.classList.remove("is-error");
+    status.textContent = `Checking @${namespaceSelect.value}…`;
+    try {
+      const payload = await startCompanionSetup(namespaceSelect.value);
+      if (signal.aborted) return;
+      render(payload);
+      await pollSetup(payload);
+    } catch (error) {
+      if (signal.aborted) return;
+      status.textContent = describeError(error);
+      status.classList.add("is-error");
+    } finally {
+      if (!signal.aborted) {
+        changing = false;
+        syncControl();
+      }
+    }
+  });
+
   checkbox.addEventListener("change", async () => {
     if (changing) return;
     const enabled = checkbox.checked;
     changing = true;
     syncControl();
     status.classList.remove("is-error");
-    status.textContent =
-      !configured && enabled
-        ? "Checking your Hugging Face account…"
-        : enabled
-          ? "Turning on…"
-          : "Turning off…";
+    status.textContent = enabled ? "Turning on…" : "Turning off…";
     try {
-      const payload =
-        !configured && enabled ? await startCompanionSetup() : await saveCompanionConfig(enabled);
+      const payload = await saveCompanionConfig(enabled);
       if (signal.aborted) return;
       render(payload, payload?.message || "Background-assistant setting saved.");
       await pollSetup(payload);
@@ -222,6 +311,11 @@ function buildAssistantSection({ signal }) {
         const payload = await untilReady(getCompanionConfig, signal);
         if (!signal.aborted) {
           render(payload);
+          if (!configured && setupState !== "restart_required") {
+            const namespacePayload = await getCompanionNamespaces();
+            if (signal.aborted) return;
+            setNamespaces(namespacePayload?.namespaces);
+          }
           await pollSetup(payload);
         }
       } catch (error) {
@@ -229,7 +323,9 @@ function buildAssistantSection({ signal }) {
         configured = false;
         changing = false;
         checkbox.checked = false;
-        choice.hidden = false;
+        choice.hidden = true;
+        namespaceField.hidden = false;
+        setupActions.hidden = false;
         setupDescription.hidden = false;
         status.textContent = `Could not load: ${describeError(error)}`;
         status.classList.add("is-error");

@@ -153,9 +153,10 @@ In the web UI's Settings view, the Connection section lets you choose either the
 ### Background assistant tasks
 
 The optional background assistant runs long tasks without blocking the conversation.
-Sign in with `hf auth login` or set `HF_TOKEN`, then enable it under
-**Settings → Background assistant**. Setup creates or reconnects the managed private
-Space and Bucket; restart once when prompted.
+Sign in with `hf auth login` or set `HF_TOKEN`, then configure it under
+**Settings → Background assistant**. Choose your PRO account or a writable, trusted
+Team/Enterprise organization; setup creates or reconnects its managed private Space and
+Bucket. Restart once when prompted. Organization access rules apply to both resources.
 
 Use **Tasks** to follow work, view questions, cancel active tasks, and open completed
 Markdown Briefs. Answer questions through Reachy. Disabling the assistant stops

@@ -3,13 +3,18 @@
 import {
   applyVoice,
   describeError,
+  getCompanionConfig,
   getCurrentVoice,
   getStatus,
   listVoices,
   saveBackendConfig,
+  saveCompanionConfig,
+  startCompanionSetup,
   untilReady,
 } from "../api.js";
 import { h } from "../ui.js";
+import { ACTIVE_COMPANION_SETUP_STATES } from "../constants.js";
+import { buildCompanionOwnership } from "../components/companion-ownership.js";
 
 const HF_CONNECTION_MODES = Object.freeze({
   DEPLOYED: "deployed",
@@ -33,6 +38,7 @@ export async function mountSettingsView({ outlet, signal }) {
       ]),
   });
   const voiceSection = buildVoiceSection();
+  const assistantSection = buildAssistantSection({ signal });
   const statusSection = buildStatusSection();
 
   const view = h(
@@ -42,9 +48,14 @@ export async function mountSettingsView({ outlet, signal }) {
       "header",
       { class: "view-header" },
       h("h1", { class: "view-title" }, "Settings"),
-      h("p", { class: "view-subtitle" }, "Connection, voice, and runtime state for Reachy Mini.")
+      h(
+        "p",
+        { class: "view-subtitle" },
+        "Connection, background assistant, voice, and runtime state for Reachy Mini."
+      )
     ),
     connectionSection.element,
+    assistantSection.element,
     voiceSection.element,
     statusSection.element
   );
@@ -52,8 +63,180 @@ export async function mountSettingsView({ outlet, signal }) {
 
   await Promise.all([
     refreshStatus({ statusSection, connectionSection, signal }),
+    assistantSection.load(),
     refreshVoices({ voiceSection, signal }),
   ]);
+}
+
+function buildAssistantSection({ signal }) {
+  const setupDescription = h(
+    "p",
+    { id: "companion-setup-hint", class: "settings-hint", hidden: "hidden" },
+    "Turning this on creates or reconnects a private Space and Bucket in your Hugging Face account."
+  );
+  const checkbox = h("input", {
+    type: "checkbox",
+    name: "companion_enabled",
+    role: "switch",
+    "aria-describedby": "companion-setup-hint companion-setup-status",
+    disabled: "disabled",
+  });
+  const choice = h(
+    "label",
+    { class: "settings-tool-choice is-disabled", hidden: "hidden" },
+    checkbox,
+    h(
+      "span",
+      { class: "settings-tool-choice-copy" },
+      h("strong", { class: "settings-tool-choice-name" }, "Use background assistant"),
+      h(
+        "span",
+        { class: "settings-tool-choice-description" },
+        "Allow Reachy to delegate longer tasks. Applies to every personality."
+      )
+    )
+  );
+  const progress = h("progress", {
+    class: "settings-assistant-progress",
+    hidden: "hidden",
+    "aria-hidden": "true",
+  });
+  const status = h(
+    "p",
+    {
+      id: "companion-setup-status",
+      class: "settings-status",
+      role: "status",
+      "aria-live": "polite",
+    },
+    "Loading assistant settings…"
+  );
+  const ownership = buildCompanionOwnership();
+  const controls = h(
+    "div",
+    { class: "settings-form" },
+    choice,
+    setupDescription,
+    progress,
+    status,
+    ownership.element
+  );
+  const element = h(
+    "section",
+    { class: "settings-section" },
+    h("h2", { class: "settings-section-title" }, "Background assistant"),
+    controls
+  );
+  let configured = false;
+  let savedEnabled = false;
+  let setupState = "idle";
+  let changing = false;
+  let polling = false;
+
+  function syncControl() {
+    const setupBusy = ACTIVE_COMPANION_SETUP_STATES.includes(setupState);
+    const unavailable = changing || setupBusy || setupState === "restart_required";
+    checkbox.disabled = unavailable;
+    choice.classList.toggle("is-disabled", unavailable);
+    controls.setAttribute("aria-busy", changing || setupBusy ? "true" : "false");
+  }
+
+  function render(payload, message = "") {
+    configured = payload?.configured === true;
+    savedEnabled = configured && payload?.enabled === true;
+    setupState = payload?.setup?.state || "idle";
+    const setupBusy = ACTIVE_COMPANION_SETUP_STATES.includes(setupState);
+    checkbox.checked = configured
+      ? savedEnabled
+      : setupBusy || setupState === "restart_required";
+    choice.hidden = false;
+    const showSetupDescription = !configured && setupState !== "restart_required";
+    setupDescription.hidden = !showSetupDescription;
+    checkbox.setAttribute(
+      "aria-describedby",
+      showSetupDescription
+        ? "companion-setup-hint companion-setup-status"
+        : "companion-setup-status"
+    );
+    progress.hidden = !setupBusy;
+    ownership.render(payload?.setup);
+    status.classList.toggle("is-error", setupState === "failed");
+    status.textContent = configured
+      ? message || (savedEnabled ? "Assistant ready for every personality." : "Turned off.")
+      : payload?.setup?.message ||
+        "Set up a private background assistant to delegate longer tasks.";
+    syncControl();
+  }
+
+  async function pollSetup(payload) {
+    if (polling || !ACTIVE_COMPANION_SETUP_STATES.includes(payload?.setup?.state)) return;
+    polling = true;
+    try {
+      let current = payload;
+      while (ACTIVE_COMPANION_SETUP_STATES.includes(current?.setup?.state) && !signal.aborted) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        if (signal.aborted) return;
+        current = await getCompanionConfig();
+        render(current);
+      }
+    } finally {
+      polling = false;
+    }
+  }
+
+  checkbox.addEventListener("change", async () => {
+    if (changing) return;
+    const enabled = checkbox.checked;
+    changing = true;
+    syncControl();
+    status.classList.remove("is-error");
+    status.textContent =
+      !configured && enabled
+        ? "Checking your Hugging Face account…"
+        : enabled
+          ? "Turning on…"
+          : "Turning off…";
+    try {
+      const payload =
+        !configured && enabled ? await startCompanionSetup() : await saveCompanionConfig(enabled);
+      if (signal.aborted) return;
+      render(payload, payload?.message || "Background-assistant setting saved.");
+      await pollSetup(payload);
+    } catch (error) {
+      if (signal.aborted) return;
+      checkbox.checked = configured ? savedEnabled : false;
+      status.textContent = describeError(error);
+      status.classList.add("is-error");
+    } finally {
+      if (!signal.aborted) {
+        changing = false;
+        syncControl();
+      }
+    }
+  });
+
+  return {
+    element,
+    async load() {
+      try {
+        const payload = await untilReady(getCompanionConfig, signal);
+        if (!signal.aborted) {
+          render(payload);
+          await pollSetup(payload);
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        configured = false;
+        changing = false;
+        checkbox.checked = false;
+        choice.hidden = false;
+        setupDescription.hidden = false;
+        status.textContent = `Could not load: ${describeError(error)}`;
+        status.classList.add("is-error");
+        syncControl();
+      }
+    },
+  };
 }
 
 function buildConnectionSection({ onSaved } = {}) {

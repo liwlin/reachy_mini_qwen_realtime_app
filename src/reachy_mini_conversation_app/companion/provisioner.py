@@ -18,6 +18,7 @@ from huggingface_hub.errors import (
 
 
 ASSISTANT_API_TOKEN_ENV = "SMOL_ASSISTANT_API_TOKEN"
+ASSISTANT_BILL_TO_ENV = "HF_INFERENCE_BILL_TO"
 ASSISTANT_SPACE_NAME = "smolagents-assistant-reachy-mini"
 ASSISTANT_BUCKET_NAME = "smolagents-assistant-reachy-mini-data"
 STATE_MOUNT_PATH = "/data"
@@ -27,7 +28,7 @@ MAX_TOKEN_CHARS = 4_096
 MAX_PROVISIONING_REQUEST_CHARS = 32_768
 ASSISTANT_DOCKERFILE = (
     b"FROM ghcr.io/alozowski/smolagents-assistant@"
-    b"sha256:d04e612bc928398a320bc632de88c9927994cf24a508226e49a574ee216440bf\n\n"
+    b"sha256:6f2cd66c40c9ffe470ffb6587aa3fec223466e16fa0e147559c38a8b2d92b0ad\n\n"
     b'CMD ["smol-assistant", "--state-dir", "/data", "service", "--web"]\n'
 )
 logger = logging.getLogger(__name__)
@@ -122,9 +123,9 @@ def list_assistant_namespaces(hf_token: str) -> tuple[AssistantNamespace, ...]:
     return _assistant_namespaces(HfApi(token=hf_token))
 
 
-def _inspect_assistant(api: HfApi, namespace: str) -> tuple[AssistantDiscovery, str | None]:
-    bucket_id = f"{namespace}/{ASSISTANT_BUCKET_NAME}"
-    space_id = f"{namespace}/{ASSISTANT_SPACE_NAME}"
+def _inspect_assistant(api: HfApi, namespace: AssistantNamespace) -> tuple[AssistantDiscovery, str | None]:
+    bucket_id = f"{namespace.name}/{ASSISTANT_BUCKET_NAME}"
+    space_id = f"{namespace.name}/{ASSISTANT_SPACE_NAME}"
     try:
         bucket = api.bucket_info(bucket_id)
     except BucketNotFoundError:
@@ -158,7 +159,7 @@ def _inspect_assistant(api: HfApi, namespace: str) -> tuple[AssistantDiscovery, 
             ),
             None,
         )
-    if space.id != space_id or space.author != namespace or space.private is not True or space.sdk != "docker":
+    if space.id != space_id or space.author != namespace.name or space.private is not True or space.sdk != "docker":
         raise ProvisioningError(f"Existing Space {space_id} is not the expected private Docker resource.")
     if space.sha is None:
         raise ProvisioningError(f"Existing Space {space_id} has no readable revision.")
@@ -175,6 +176,12 @@ def _inspect_assistant(api: HfApi, namespace: str) -> tuple[AssistantDiscovery, 
         raise ProvisioningError(f"Existing Space {space_id} has an unexpected volume configuration.")
     if set(api.get_space_secrets(space_id)) != {"HF_TOKEN", ASSISTANT_API_TOKEN_ENV}:
         raise ProvisioningError(f"Existing Space {space_id} has an unexpected secret configuration.")
+    expected_variables = (
+        {ASSISTANT_BILL_TO_ENV: namespace.name} if namespace.kind is AssistantNamespaceKind.ORGANIZATION else {}
+    )
+    configured_variables = {key: variable.value for key, variable in api.get_space_variables(space_id).items()}
+    if configured_variables != expected_variables:
+        raise ProvisioningError(f"Existing Space {space_id} has an unexpected variable configuration.")
 
     try:
         dockerfile_path = api.hf_hub_download(
@@ -223,9 +230,10 @@ def provision_assistant(
 
     api = HfApi(token=hf_token)
     available_namespaces = _assistant_namespaces(api)
-    if namespace not in {candidate.name for candidate in available_namespaces}:
+    selected_namespace = next((candidate for candidate in available_namespaces if candidate.name == namespace), None)
+    if selected_namespace is None:
         raise ProvisioningError("The selected Hugging Face namespace is not available for assistant setup.")
-    discovery, space_revision = _inspect_assistant(api, namespace)
+    discovery, space_revision = _inspect_assistant(api, selected_namespace)
     expected_volume = Volume(
         type="bucket",
         source=discovery.bucket_id,
@@ -247,6 +255,11 @@ def provision_assistant(
                 {"key": "HF_TOKEN", "value": hf_token},
                 {"key": ASSISTANT_API_TOKEN_ENV, "value": api_token},
             ],
+            space_variables=(
+                [{"key": ASSISTANT_BILL_TO_ENV, "value": selected_namespace.name}]
+                if selected_namespace.kind is AssistantNamespaceKind.ORGANIZATION
+                else None
+            ),
             space_volumes=[expected_volume],
         )
         if api.space_info(discovery.space_id).private is not True:

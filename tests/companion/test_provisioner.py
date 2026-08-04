@@ -15,6 +15,7 @@ from huggingface_hub.errors import BucketNotFoundError, RepositoryNotFoundError,
 from reachy_mini_conversation_app.companion.provisioner import (
     STATE_MOUNT_PATH,
     ASSISTANT_DOCKERFILE,
+    ASSISTANT_BILL_TO_ENV,
     ProvisioningError,
     ProvisionedAssistant,
     AssistantNamespaceKind,
@@ -48,23 +49,37 @@ def _expected_volume(bucket_id: str = BUCKET_ID) -> Volume:
     )
 
 
-def _configure_managed_assistant(api: MagicMock, dockerfile: Path) -> None:
+def _configure_managed_assistant(
+    api: MagicMock,
+    dockerfile: Path,
+    namespace: str = "alice",
+    *,
+    organization: bool = False,
+) -> None:
+    space_id = f"{namespace}/smolagents-assistant-reachy-mini"
+    bucket_id = f"{namespace}/smolagents-assistant-reachy-mini-data"
     dockerfile.write_bytes(ASSISTANT_DOCKERFILE)
-    api.whoami.return_value = {"name": "alice"}
-    api.bucket_info.return_value = SimpleNamespace(id=BUCKET_ID, private=True)
+    api.whoami.return_value = {
+        "name": "alice",
+        "orgs": [{"name": namespace, "roleInOrg": "write"}] if organization else [],
+    }
+    api.bucket_info.return_value = SimpleNamespace(id=bucket_id, private=True)
     api.space_info.return_value = SimpleNamespace(
-        id=SPACE_ID,
-        author="alice",
+        id=space_id,
+        author=namespace,
         private=True,
         sdk="docker",
         sha="space-revision",
-        runtime=SimpleNamespace(volumes=[_expected_volume()]),
+        runtime=SimpleNamespace(volumes=[_expected_volume(bucket_id)]),
     )
     api.hf_hub_download.return_value = str(dockerfile)
     api.get_space_secrets.return_value = {
         "HF_TOKEN": SimpleNamespace(),
         "SMOL_ASSISTANT_API_TOKEN": SimpleNamespace(),
     }
+    api.get_space_variables.return_value = (
+        {ASSISTANT_BILL_TO_ENV: SimpleNamespace(value=namespace)} if organization else {}
+    )
 
 
 @patch("reachy_mini_conversation_app.companion.provisioner.provision_assistant")
@@ -145,7 +160,7 @@ def test_provision_assistant_creates_private_resources(api_class: MagicMock) -> 
 
     assert ASSISTANT_DOCKERFILE.startswith(
         b"FROM ghcr.io/alozowski/smolagents-assistant@"
-        b"sha256:d04e612bc928398a320bc632de88c9927994cf24a508226e49a574ee216440bf\n"
+        b"sha256:6f2cd66c40c9ffe470ffb6587aa3fec223466e16fa0e147559c38a8b2d92b0ad\n"
     )
     api.create_bucket.assert_called_once_with(ORG_BUCKET_ID, private=True, exist_ok=False)
     api.create_repo.assert_called_once_with(
@@ -158,6 +173,7 @@ def test_provision_assistant_creates_private_resources(api_class: MagicMock) -> 
             {"key": "HF_TOKEN", "value": "hf_oauth_token"},
             {"key": "SMOL_ASSISTANT_API_TOKEN", "value": API_TOKEN},
         ],
+        space_variables=[{"key": ASSISTANT_BILL_TO_ENV, "value": ORG_NAMESPACE}],
         space_volumes=[_expected_volume(ORG_BUCKET_ID)],
     )
     api.upload_file.assert_called_once_with(
@@ -204,6 +220,7 @@ def test_provision_assistant_recreates_space_over_existing_bucket(api_class: Mag
 
     api.create_bucket.assert_not_called()
     api.create_repo.assert_called_once()
+    assert api.create_repo.call_args.kwargs["space_variables"] is None
     assert api.create_repo.call_args.kwargs["space_volumes"] == [_expected_volume()]
     api.upload_file.assert_called_once_with(
         path_or_fileobj=ASSISTANT_DOCKERFILE,
@@ -216,38 +233,41 @@ def test_provision_assistant_recreates_space_over_existing_bucket(api_class: Mag
 
 
 @patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
-def test_provision_assistant_finishes_interrupted_setup(api_class: MagicMock, tmp_path: Path) -> None:
+def test_provision_assistant_finishes_interrupted_organization_setup(
+    api_class: MagicMock,
+    tmp_path: Path,
+) -> None:
     """Retrying setup uploads the missing runtime to the same resources."""
     api = api_class.return_value
     dockerfile = tmp_path / "Dockerfile"
-    _configure_managed_assistant(api, dockerfile)
+    _configure_managed_assistant(api, dockerfile, ORG_NAMESPACE, organization=True)
     api.hf_hub_download.side_effect = RemoteEntryNotFoundError("missing", response=_not_found_response())
     api.space_info.side_effect = [
         api.space_info.return_value,
-        SimpleNamespace(private=True, host=API_URL),
+        SimpleNamespace(private=True, host=ORG_API_URL),
     ]
     api.wait_for_space.return_value = SimpleNamespace(stage="RUNNING")
 
-    provision_assistant("hf_oauth_token", API_TOKEN, "alice")
+    provision_assistant("hf_oauth_token", API_TOKEN, ORG_NAMESPACE)
 
     api.create_bucket.assert_not_called()
     api.create_repo.assert_not_called()
     api.upload_file.assert_called_once_with(
         path_or_fileobj=ASSISTANT_DOCKERFILE,
         path_in_repo="Dockerfile",
-        repo_id=SPACE_ID,
+        repo_id=ORG_SPACE_ID,
         repo_type="space",
         commit_message="Configure assistant runtime",
         parent_commit="space-revision",
     )
-    api.add_space_secret.assert_any_call(SPACE_ID, "HF_TOKEN", "hf_oauth_token")
-    api.add_space_secret.assert_any_call(SPACE_ID, "SMOL_ASSISTANT_API_TOKEN", API_TOKEN)
-    api.restart_space.assert_called_once_with(SPACE_ID)
+    api.add_space_secret.assert_any_call(ORG_SPACE_ID, "HF_TOKEN", "hf_oauth_token")
+    api.add_space_secret.assert_any_call(ORG_SPACE_ID, "SMOL_ASSISTANT_API_TOKEN", API_TOKEN)
+    api.restart_space.assert_called_once_with(ORG_SPACE_ID)
 
 
 @pytest.mark.parametrize(
     "problem",
-    ["public_bucket", "public_space", "space_only", "dockerfile", "volume", "secrets"],
+    ["public_bucket", "public_space", "space_only", "dockerfile", "volume", "secrets", "variables"],
 )
 @patch("reachy_mini_conversation_app.companion.provisioner.HfApi")
 def test_provision_assistant_rejects_non_exact_resources(
@@ -269,8 +289,12 @@ def test_provision_assistant_rejects_non_exact_resources(
         dockerfile.write_text("FROM scratch\n", encoding="utf-8")
     elif problem == "volume":
         api.space_info.return_value.runtime.volumes = []
-    else:
+    elif problem == "secrets":
         api.get_space_secrets.return_value = {"HF_TOKEN": SimpleNamespace()}
+    else:
+        api.get_space_variables.return_value = {
+            ASSISTANT_BILL_TO_ENV: SimpleNamespace(value="unexpected-organization")
+        }
 
     with pytest.raises(ProvisioningError):
         provision_assistant("hf_oauth_token", API_TOKEN, "alice")

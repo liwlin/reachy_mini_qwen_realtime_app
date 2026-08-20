@@ -15,8 +15,6 @@ from collections.abc import Callable
 import numpy as np
 
 from reachy_mini import ReachyMini
-from reachy_mini.io.jsonrpc import JsonRpcError
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_mini_conversation_app.config import (
     HF_BACKEND,
@@ -41,6 +39,7 @@ from reachy_mini_conversation_app.config import (
 )
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.streaming import AdditionalOutputs, audio_to_float32
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcError, JsonRpcServer
 from reachy_mini_conversation_app.startup_settings import read_startup_settings, write_startup_settings
 from reachy_mini_conversation_app.tools.core_tools import initialize_tools
 from reachy_mini_conversation_app.tool_space_routes import register_tool_space_methods
@@ -583,12 +582,11 @@ class LocalStream:
         # (conversation.turn/phase/transcript/activity) are pushed from activity.
         rpc = JsonRpcServer()
 
-        # SDK isn't marked py.typed, so mypy sees rpc.method as untyped; safe here.
-        @rpc.method("conversation.status")  # type: ignore[untyped-decorator]
+        @rpc.method("conversation.status")
         def _rpc_status(_params: dict[str, object]) -> dict[str, object]:
             return _status_payload()
 
-        @rpc.method("conversation.say")  # type: ignore[untyped-decorator]
+        @rpc.method("conversation.say")
         async def _rpc_say(params: dict[str, object]) -> dict[str, object]:
             text = str(params.get("text", "")).strip()
             if not text:
@@ -599,7 +597,7 @@ class LocalStream:
             await self.handler.say(text)
             return {"ok": True}
 
-        @rpc.method("conversation.interrupt")  # type: ignore[untyped-decorator]
+        @rpc.method("conversation.interrupt")
         def _rpc_interrupt(_params: dict[str, object]) -> dict[str, object]:
             if not self.handler._is_connected():
                 raise JsonRpcError("no active session", reason="not_running")
@@ -608,14 +606,14 @@ class LocalStream:
             rpc.broadcast_threadsafe("conversation.turn", {"state": "listening", "reason": "interrupted"})
             return {"ok": True}
 
-        @rpc.method("conversation.mic")  # type: ignore[untyped-decorator]
+        @rpc.method("conversation.mic")
         def _rpc_mic(params: dict[str, object]) -> dict[str, object]:
             if "muted" in params:
                 self._mic_muted = bool(params["muted"])
                 logger.info("Microphone %s via /rpc", "muted" if self._mic_muted else "unmuted")
             return {"muted": self._mic_muted}
 
-        @rpc.method("backend.config")  # type: ignore[untyped-decorator]
+        @rpc.method("backend.config")
         def _rpc_backend_config(params: dict[str, object]) -> dict[str, object]:
             hf_selection = get_hf_connection_selection()
             hf_mode = str(params.get("hf_mode") or hf_selection.mode).strip().lower()

@@ -46,10 +46,15 @@ def run(
     """Run the Reachy Mini conversation app."""
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
     from reachy_mini_conversation_app.moves import MovementManager
-    from reachy_mini_conversation_app.config import config, is_gemini_model, refresh_runtime_config_from_env
+    from reachy_mini_conversation_app.config import (
+        config,
+        is_qwen_model,
+        is_gemini_model,
+        refresh_runtime_config_from_env,
+    )
 
     logger = setup_logger(args.debug)
-    logger.info("Starting Reachy Mini Conversation App")
+    logger.info("Starting Reachy Mini Qwen Realtime")
 
     if instance_path is not None:
         try:
@@ -141,7 +146,13 @@ def run(
     )
     logger.debug(f"Chatbot avatar images: {chatbot.avatar_images}")
 
-    if is_gemini_model():
+    handler: Any
+    if is_qwen_model():
+        from reachy_mini_conversation_app.qwen_realtime import QwenRealtimeHandler
+
+        logger.info("Using Qwen realtime handler for model: %s", config.MODEL_NAME)
+        handler = QwenRealtimeHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)
+    elif is_gemini_model():
         from reachy_mini_conversation_app.gemini_live import GeminiLiveHandler
 
         logger.info("Using Gemini Live handler for model: %s", config.MODEL_NAME)
@@ -150,18 +161,27 @@ def run(
         from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
 
         logger.info("Using OpenAI Realtime handler for model: %s", config.MODEL_NAME)
-        handler = OpenaiRealtimeHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)  # type: ignore[assignment]
+        handler = OpenaiRealtimeHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)
 
     stream_manager: gr.Blocks | LocalStream | None = None
 
     if args.gradio:
         uses_gemini_backend = is_gemini_model()
+        uses_qwen_backend = is_qwen_model()
+        if uses_qwen_backend:
+            api_key_label = "DASHSCOPE_API_KEY"
+            api_key_value = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+        elif uses_gemini_backend:
+            api_key_label = "GEMINI_API_KEY"
+            api_key_value = os.getenv("GEMINI_API_KEY")
+        else:
+            api_key_label = "OPENAI API Key"
+            api_key_value = os.getenv("OPENAI_API_KEY")
+
         api_key_textbox = gr.Textbox(
-            label="GEMINI_API_KEY" if uses_gemini_backend else "OPENAI API Key",
+            label=api_key_label,
             type="password",
-            value=(os.getenv("GEMINI_API_KEY") if uses_gemini_backend else os.getenv("OPENAI_API_KEY"))
-            if not get_space()
-            else "",
+            value=api_key_value if not get_space() else "",
         )
 
         from reachy_mini_conversation_app.gradio_personality import PersonalityUI
@@ -180,7 +200,7 @@ def run(
             ],
             additional_outputs=[chatbot],
             additional_outputs_handler=update_chatbot,
-            ui_args={"title": "Talk with Reachy Mini"},
+            ui_args={"title": "Reachy Mini Qwen Realtime"},
         )
         stream_manager = stream.ui
         if not settings_app:

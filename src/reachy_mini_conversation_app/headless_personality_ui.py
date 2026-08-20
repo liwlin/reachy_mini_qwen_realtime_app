@@ -24,6 +24,7 @@ from .openai_realtime import OpenaiRealtimeHandler
 
 if TYPE_CHECKING:
     from .gemini_live import GeminiLiveHandler
+    from .qwen_realtime import QwenRealtimeHandler
 from .headless_personality import (
     DEFAULT_OPTION,
     _sanitize_name,
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def mount_personality_routes(
     app: FastAPI,
-    handler: OpenaiRealtimeHandler | GeminiLiveHandler,
+    handler: OpenaiRealtimeHandler | GeminiLiveHandler | QwenRealtimeHandler,
     get_loop: Callable[[], asyncio.AbstractEventLoop | None],
     *,
     persist_personality: Callable[[Optional[str]], None] | None = None,

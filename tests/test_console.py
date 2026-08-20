@@ -1,5 +1,6 @@
 """Tests for the headless console stream."""
 
+import os
 import asyncio
 import threading
 from types import SimpleNamespace
@@ -168,6 +169,132 @@ def test_backend_config_persists_gemini_selection_and_status(
     assert "BACKEND_PROVIDER=gemini" in env_text
     assert "MODEL_NAME=gemini-3.1-flash-live-preview" in env_text
     assert "GEMINI_API_KEY=gem-test-token" in env_text
+
+
+def test_backend_config_persists_qwen_selection_and_status(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Settings API should persist Qwen backend choice and DashScope token."""
+    monkeypatch.setattr(config, "BACKEND_PROVIDER", "openai")
+    monkeypatch.setattr(config, "MODEL_NAME", "gpt-realtime")
+    monkeypatch.setattr(config, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(config, "QWEN_API_KEY", None)
+    monkeypatch.setattr(
+        config,
+        "QWEN_REALTIME_URL",
+        "wss://workspace.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3.5-omni-flash-realtime",
+    )
+    monkeypatch.setenv("BACKEND_PROVIDER", "openai")
+    monkeypatch.setenv("MODEL_NAME", "gpt-realtime")
+    monkeypatch.setenv(
+        "QWEN_REALTIME_URL",
+        "wss://workspace.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3.5-omni-flash-realtime",
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+
+    app = FastAPI()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(MagicMock(), robot, settings_app=app, instance_path=str(tmp_path))
+    stream._init_settings_ui_if_needed()
+
+    client = TestClient(app)
+    response = client.post(
+        "/backend_config",
+        json={
+            "backend": "qwen",
+            "api_key": "dashscope-test-token",
+            "qwen_workspace_id": "workspace-test",
+            "qwen_region": "cn-beijing",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["backend_provider"] == "qwen"
+    assert data["active_backend"] == "openai"
+    assert data["has_qwen_key"] is True
+    assert data["has_key"] is False
+    assert data["can_proceed"] is False
+    assert data["can_proceed_with_qwen"] is True
+    assert data["requires_restart"] is True
+
+    status = client.get("/status")
+    assert status.status_code == 200
+    status_data = status.json()
+    assert status_data["backend_provider"] == "qwen"
+    assert status_data["active_backend"] == "openai"
+    assert status_data["has_qwen_key"] is True
+    assert status_data["can_proceed_with_qwen"] is True
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "BACKEND_PROVIDER=qwen" in env_text
+    assert "MODEL_NAME=qwen3.5-omni-flash-realtime" in env_text
+    assert "DASHSCOPE_API_KEY=dashscope-test-token" in env_text
+    assert "QWEN_WORKSPACE_ID=workspace-test" in env_text
+    assert "QWEN_REGION=cn-beijing" in env_text
+    assert not any(line.startswith("QWEN_REALTIME_URL=") for line in env_text.splitlines())
+    assert "QWEN_REALTIME_URL" not in os.environ
+    assert config.QWEN_REALTIME_URL is None
+
+
+def test_backend_config_rejects_qwen_without_realtime_endpoint(tmp_path, monkeypatch) -> None:
+    """The settings API must not report Qwen ready without a realtime endpoint."""
+    monkeypatch.setattr(config, "QWEN_API_KEY", None)
+    monkeypatch.setattr(config, "QWEN_REALTIME_URL", None)
+    monkeypatch.setattr(config, "QWEN_WORKSPACE_ID", None)
+    monkeypatch.delenv("QWEN_REALTIME_URL", raising=False)
+    monkeypatch.delenv("QWEN_WORKSPACE_ID", raising=False)
+
+    app = FastAPI()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(MagicMock(), robot, settings_app=app, instance_path=str(tmp_path))
+    stream._init_settings_ui_if_needed()
+
+    response = TestClient(app).post(
+        "/backend_config",
+        json={"backend": "qwen", "api_key": "dashscope-test-token"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"ok": False, "error": "missing_connection_config"}
+
+
+def test_backend_config_normalizes_console_https_endpoint(tmp_path, monkeypatch) -> None:
+    """Alibaba console HTTPS endpoints should persist as Qwen Realtime WSS URLs."""
+    monkeypatch.setattr(config, "QWEN_API_KEY", None)
+    monkeypatch.setattr(config, "QWEN_REALTIME_URL", None)
+    monkeypatch.setattr(config, "QWEN_WORKSPACE_ID", None)
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("QWEN_REALTIME_URL", raising=False)
+    monkeypatch.delenv("QWEN_WORKSPACE_ID", raising=False)
+
+    app = FastAPI()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(MagicMock(), robot, settings_app=app, instance_path=str(tmp_path))
+    stream._init_settings_ui_if_needed()
+
+    response = TestClient(app).post(
+        "/backend_config",
+        json={
+            "backend": "qwen",
+            "api_key": "dashscope-test-token",
+            "qwen_workspace_id": "https://llm-workspace.cn-beijing.maas.aliyuncs.com",
+            "qwen_region": "cn-beijing",
+        },
+    )
+
+    assert response.status_code == 200
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert (
+        "QWEN_REALTIME_URL=wss://llm-workspace.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime" in env_text
+    )
+    assert not any(line.startswith("QWEN_WORKSPACE_ID=") for line in env_text.splitlines())
 
 
 def test_backend_config_preserves_explicit_model_override_when_saving_key(

@@ -1,20 +1,22 @@
 ---
-title: Reachy Mini Conversation App
+title: Reachy Mini Qwen Realtime
 emoji: 🎤
 colorFrom: red
 colorTo: blue
 sdk: static
 pinned: false
-short_description: Talk with Reachy Mini!
+short_description: Qwen voice, vision, tools, and web search for Reachy Mini
 suggested_storage: large
 tags:
  - reachy_mini
  - reachy_mini_python_app
 ---
 
-# Reachy Mini conversation app
+# Reachy Mini Qwen Realtime
 
-Conversational app for the Reachy Mini robot combining real-time voice APIs (OpenAI Realtime or Gemini Live), vision pipelines, and choreographed motion libraries.
+Community fork of Pollen Robotics' Reachy Mini Conversation App, adding Qwen Omni Realtime, DashScope/Bailian configuration, camera-grounded vision, Function Tools, and optional MCP web search while retaining OpenAI and Gemini compatibility.
+
+> Based on [`pollen-robotics/reachy_mini_conversation_app`](https://github.com/pollen-robotics/reachy_mini_conversation_app) v0.5.0. This community fork is not an official Pollen Robotics release.
 
 ![Reachy Mini Dance](docs/assets/reachy_mini_dance.gif)
 
@@ -30,9 +32,10 @@ Conversational app for the Reachy Mini robot combining real-time voice APIs (Ope
 - [License](#license)
 
 ## Overview
-- Real-time audio conversation loop with `fastrtc` for low-latency streaming. Supports two backends:
+- Real-time audio conversation loop with `fastrtc` for low-latency streaming. Supports three backends:
   - **OpenAI Realtime** (`gpt-realtime`) — default
   - **Gemini Live** (`gemini-3.1-flash-live-preview`) — alternative, using the Google GenAI SDK
+  - **Qwen Realtime** (`qwen3.5-omni-flash-realtime`) — alternative, using DashScope/Bailian WebSocket Realtime
 - Vision processing uses the selected realtime backend by default (when camera tool is used), with optional on-device local vision using SmolVLM2 (CPU/GPU/MPS) via `--local-vision`.
 - Layered motion system queues primary moves (dances, emotions, goto poses, breathing) while blending speech-reactive wobble and head-tracking.
 - Async tool dispatch integrates robot motion, camera capture, and optional head-tracking capabilities through a Gradio web UI with live transcripts.
@@ -127,8 +130,12 @@ Some wheels (like PyTorch) are large and require compatible CUDA or CPU builds�
 |----------|-------------|
 | `OPENAI_API_KEY` | Optional override or fallback for OpenAI mode. In the headless settings flow, the app can use bundled OpenAI access when available; set your own key to override it or provide a fallback. |
 | `GEMINI_API_KEY` | Required for Gemini mode. Also accepts `GOOGLE_API_KEY`. Get one at [aistudio.google.com](https://aistudio.google.com/apikey). |
-| `BACKEND_PROVIDER` | Realtime backend to use: `openai` (default) or `gemini`. |
-| `MODEL_NAME` | Optional model override for the selected backend. Defaults to `gpt-realtime` for OpenAI and `gemini-3.1-flash-live-preview` for Gemini Live. |
+| `DASHSCOPE_API_KEY` | Required for Qwen mode. `QWEN_API_KEY` is also accepted as a fallback. |
+| `BACKEND_PROVIDER` | Realtime backend to use: `openai` (default), `gemini`, or `qwen`. |
+| `MODEL_NAME` | Optional model override for the selected backend. Defaults to `gpt-realtime` for OpenAI, `gemini-3.1-flash-live-preview` for Gemini Live, and `qwen3.5-omni-flash-realtime` for Qwen Realtime. |
+| `QWEN_REALTIME_URL` | Optional full Qwen Realtime WebSocket URL. Use this if your Alibaba Cloud console provides a complete endpoint. |
+| `QWEN_WORKSPACE_ID` | Qwen Realtime workspace ID used to build the WebSocket URL when `QWEN_REALTIME_URL` is unset. |
+| `QWEN_REGION` | Qwen Realtime region used with `QWEN_WORKSPACE_ID`; defaults to `cn-beijing`. |
 | `HF_HOME` | Cache directory for local Hugging Face downloads (only used with `--local-vision` flag, defaults to `./cache`). |
 | `HF_TOKEN` | Optional token for Hugging Face access (for gated/private assets). |
 | `LOCAL_VISION_MODEL` | Hugging Face model path for local vision processing (only used with `--local-vision` flag, defaults to `HuggingFaceTB/SmolVLM2-2.2B-Instruct`). |
@@ -148,12 +155,60 @@ GEMINI_API_KEY=your-gemini-api-key
 > [!NOTE]
 > Gemini Live uses a different set of voices: Aoede, Charon, Fenrir, Kore (default), Leda, Orus, Puck, Zephyr. If your profile's `voice.txt` specifies an OpenAI voice, it will fall back to Kore.
 
+### Switching to Qwen Realtime
+
+To use Qwen Realtime instead of OpenAI Realtime, update your `.env`:
+
+```env
+BACKEND_PROVIDER="qwen"
+MODEL_NAME="qwen3.5-omni-flash-realtime"
+DASHSCOPE_API_KEY=your-dashscope-api-key
+
+# Use either a full URL:
+QWEN_REALTIME_URL=wss://your-workspace.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3.5-omni-flash-realtime
+
+# Or let the app build it:
+# QWEN_WORKSPACE_ID=your-workspace
+# QWEN_REGION=cn-beijing
+```
+
+Qwen Realtime uses a different WebSocket endpoint from OpenAI and Gemini. The app sends 16 kHz PCM16 input, receives 24 kHz PCM16 audio deltas, and converts the existing tool definitions into DashScope/Qwen's nested `function` schema. API keys are region-specific, so the key, workspace, and region must belong to the same Alibaba Cloud region.
+
+> [!NOTE]
+> Qwen Realtime voices are curated separately: Tina (default for Qwen 3.5), Cherry, Serena, Ethan, Chelsie. If your profile's `voice.txt` specifies an OpenAI/Gemini voice, it falls back to Tina.
+
+### Optional MCP web search
+
+Qwen's built-in `enable_search` cannot be enabled together with Function Tools. To keep camera, motion, emotion,
+and dance available, this fork exposes current-web search as a regular `web_search` Tool backed by Streamable HTTP
+MCP. Add `web_search` to the active profile's `tools.txt` and optionally configure:
+
+```env
+MCP_WEB_SEARCH_URL=https://mcp.exa.ai/mcp
+MCP_WEB_SEARCH_TOOL=web_search_exa
+MCP_WEB_SEARCH_TIMEOUT_SECONDS=8
+# EXA_API_KEY=optional-key
+```
+
+The default Exa MCP endpoint supports limited keyless use and may return rate-limit errors. Only the text search
+query is sent to the configured MCP provider; microphone audio, camera images, robot identifiers, and local files
+are not sent. Search output is bounded and treated as untrusted external evidence. Network or rate-limit failures
+return a tool error without stopping the conversation, camera, or robot actions.
+
+In the headless settings page, select **Qwen Realtime**, then enter:
+
+1. `DASHSCOPE_API_KEY`
+2. The Bailian workspace ID or the complete official `wss://...maas.aliyuncs.com/api-ws/v1/realtime` URL
+3. China (Beijing) or Singapore, matching the API key and workspace
+
+The camera tool forwards JPEG frames through Qwen's image buffer and keeps image bytes out of the function result. Qwen currently limits each Base64-encoded image to 256 KB; larger frames return a clear tool error instead of being sent.
+
 ## Running the app
 
 Activate your virtual environment, then launch:
 
 ```bash
-reachy-mini-conversation-app
+reachy-mini-qwen-realtime-app
 ```
 
 > [!TIP]
@@ -176,19 +231,19 @@ The app runs in console mode by default. Add `--gradio` to launch a web UI at ht
 
 ```bash
 # Run with MediaPipe head tracking
-reachy-mini-conversation-app --head-tracker mediapipe
+reachy-mini-qwen-realtime-app --head-tracker mediapipe
 
 # Run with the YOLO face-detection backend for head tracking
-reachy-mini-conversation-app --head-tracker yolo
+reachy-mini-qwen-realtime-app --head-tracker yolo
 
 # Run with local vision processing (requires local_vision extra)
-reachy-mini-conversation-app --local-vision
+reachy-mini-qwen-realtime-app --local-vision
 
 # Audio-only conversation (no camera)
-reachy-mini-conversation-app --no-camera
+reachy-mini-qwen-realtime-app --no-camera
 
 # Launch with Gradio web interface
-reachy-mini-conversation-app --gradio
+reachy-mini-qwen-realtime-app --gradio
 ```
 
 > [!WARNING]
@@ -322,7 +377,7 @@ This supports both:
 If you run multiple Reachy Mini daemons on the same network, use:
 
 ```bash
-reachy-mini-conversation-app --robot-name <name>
+reachy-mini-qwen-realtime-app --robot-name <name>
 ```
 
 `<name>` must match the daemon's `--robot-name` value so the app connects to the correct robot.

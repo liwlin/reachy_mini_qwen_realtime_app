@@ -15,8 +15,9 @@ import sys
 import time
 import asyncio
 import logging
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Mapping, Optional
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from fastrtc import AdditionalOutputs, audio_to_float32
 from scipy.signal import resample
@@ -24,22 +25,26 @@ from scipy.signal import resample
 from reachy_mini import ReachyMini
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_mini_conversation_app.config import (
+    QWEN_BACKEND,
     GEMINI_BACKEND,
     LOCKED_PROFILE,
     OPENAI_BACKEND,
+    QWEN_REALTIME_REGIONS,
     config,
     get_backend_choice,
+    get_qwen_realtime_url,
     get_model_name_for_backend,
+    is_qwen_workspace_id_valid,
+    is_qwen_realtime_url_allowed,
     refresh_runtime_config_from_env,
 )
 from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
 from reachy_mini_conversation_app.headless_personality_ui import mount_personality_routes
 
 
-try:
+if TYPE_CHECKING:
     from reachy_mini_conversation_app.gemini_live import GeminiLiveHandler
-except ImportError:
-    GeminiLiveHandler = None  # type: ignore[misc,assignment]
+    from reachy_mini_conversation_app.qwen_realtime import QwenRealtimeHandler
 
 
 try:
@@ -84,7 +89,7 @@ class LocalStream:
 
     def __init__(
         self,
-        handler: "OpenaiRealtimeHandler | GeminiLiveHandler",
+        handler: "OpenaiRealtimeHandler | GeminiLiveHandler | QwenRealtimeHandler",
         robot: ReachyMini,
         *,
         settings_app: Optional[FastAPI] = None,
@@ -144,7 +149,11 @@ class LocalStream:
     def _active_backend(self) -> str:
         """Return the backend family of the currently running handler."""
         handler_name = type(self.handler).__name__.lower()
-        return GEMINI_BACKEND if "gemini" in handler_name else OPENAI_BACKEND
+        if "gemini" in handler_name:
+            return GEMINI_BACKEND
+        if "qwen" in handler_name:
+            return QWEN_BACKEND
+        return OPENAI_BACKEND
 
     @staticmethod
     def _has_key(value: Optional[str]) -> bool:
@@ -155,22 +164,30 @@ class LocalStream:
         """Return whether the requested backend has its required credential."""
         if backend == GEMINI_BACKEND:
             return self._has_key(config.GEMINI_API_KEY)
+        if backend == QWEN_BACKEND:
+            return self._has_key(config.QWEN_API_KEY) and is_qwen_realtime_url_allowed(get_qwen_realtime_url())
         return self._has_key(config.OPENAI_API_KEY)
 
     def _persist_env_value(self, env_name: str, value: str) -> None:
         """Persist a non-empty environment value in memory and in the instance `.env`."""
         self._persist_env_values({env_name: value})
 
-    def _persist_env_values(self, updates: dict[str, str]) -> None:
-        """Persist non-empty environment values in memory and in the instance `.env`."""
+    def _persist_env_values(self, updates: Mapping[str, str | None]) -> None:
+        """Persist environment updates in memory and in the instance `.env`.
+
+        Empty values remove stale settings so mutually exclusive connection
+        modes cannot accidentally shadow each other.
+        """
         normalized_updates = {name: (value or "").strip() for name, value in updates.items()}
-        normalized_updates = {name: value for name, value in normalized_updates.items() if value}
         if not normalized_updates:
             return
 
         for env_name, value in normalized_updates.items():
             try:
-                os.environ[env_name] = value
+                if value:
+                    os.environ[env_name] = value
+                else:
+                    os.environ.pop(env_name, None)
             except Exception:
                 pass
         refresh_runtime_config_from_env()
@@ -185,10 +202,13 @@ class LocalStream:
                 replaced = False
                 for i, ln in enumerate(lines):
                     if ln.strip().startswith(f"{env_name}="):
-                        lines[i] = f"{env_name}={value}"
+                        if value:
+                            lines[i] = f"{env_name}={value}"
+                        else:
+                            lines.pop(i)
                         replaced = True
                         break
-                if not replaced:
+                if not replaced and value:
                     lines.append(f"{env_name}={value}")
             final_text = "\n".join(lines) + "\n"
             env_path.write_text(final_text, encoding="utf-8")
@@ -211,6 +231,38 @@ class LocalStream:
     def _persist_gemini_api_key(self, key: str) -> None:
         """Persist GEMINI_API_KEY to environment and instance `.env`."""
         self._persist_env_value("GEMINI_API_KEY", key)
+
+    def _persist_qwen_api_key(self, key: str) -> None:
+        """Persist DASHSCOPE_API_KEY to environment and instance `.env`."""
+        self._persist_env_value("DASHSCOPE_API_KEY", key)
+
+    def _persist_qwen_connection(
+        self,
+        *,
+        realtime_url: str = "",
+        workspace_id: str = "",
+        region: str = "",
+    ) -> None:
+        """Persist the non-secret Qwen Realtime connection fields."""
+        updates: dict[str, str] = {}
+        if realtime_url:
+            updates["QWEN_REALTIME_URL"] = realtime_url
+            updates["QWEN_WORKSPACE_ID"] = ""
+            updates["QWEN_REGION"] = ""
+        if workspace_id:
+            updates["QWEN_REALTIME_URL"] = ""
+            updates["QWEN_WORKSPACE_ID"] = workspace_id
+            updates["QWEN_REGION"] = region or "cn-beijing"
+        self._persist_env_values(updates)
+
+    @staticmethod
+    def _normalize_qwen_console_endpoint(value: str) -> str | None:
+        """Convert an Alibaba console HTTP URL into the Realtime WSS endpoint."""
+        parts = urlsplit(value)
+        if parts.scheme.lower() not in {"http", "https", "ws", "wss"} or not parts.netloc:
+            return None
+        path = parts.path if parts.path not in {"", "/"} else "/api-ws/v1/realtime"
+        return urlunsplit(("wss", parts.netloc, path, parts.query, parts.fragment))
 
     def _persist_backend_choice(self, backend: str) -> None:
         """Persist the selected backend without clobbering explicit model overrides."""
@@ -308,14 +360,21 @@ class LocalStream:
         class BackendPayload(BaseModel):
             backend: str
             api_key: Optional[str] = None
+            qwen_realtime_url: Optional[str] = None
+            qwen_workspace_id: Optional[str] = None
+            qwen_region: Optional[str] = None
 
         def _status_payload() -> dict[str, object]:
             backend_provider = get_backend_choice()
             active_backend = self._active_backend()
             has_openai_key = self._has_required_key(OPENAI_BACKEND)
             has_gemini_key = self._has_required_key(GEMINI_BACKEND)
+            has_qwen_api_key = self._has_key(config.QWEN_API_KEY)
+            has_qwen_connection_config = is_qwen_realtime_url_allowed(get_qwen_realtime_url())
+            has_qwen_key = self._has_required_key(QWEN_BACKEND)
             can_proceed_with_openai = has_openai_key
             can_proceed_with_gemini = has_gemini_key
+            can_proceed_with_qwen = has_qwen_key
             can_proceed = self._has_required_key(active_backend)
             requires_restart = backend_provider != active_backend
             return {
@@ -324,9 +383,13 @@ class LocalStream:
                 "has_key": can_proceed,
                 "has_openai_key": has_openai_key,
                 "has_gemini_key": has_gemini_key,
+                "has_qwen_key": has_qwen_key,
+                "has_qwen_api_key": has_qwen_api_key,
+                "has_qwen_connection_config": has_qwen_connection_config,
                 "can_proceed": can_proceed,
                 "can_proceed_with_openai": can_proceed_with_openai,
                 "can_proceed_with_gemini": can_proceed_with_gemini,
+                "can_proceed_with_qwen": can_proceed_with_qwen,
                 "requires_restart": requires_restart,
             }
 
@@ -367,17 +430,46 @@ class LocalStream:
         @self._settings_app.post("/backend_config")
         def _set_backend(payload: BackendPayload) -> JSONResponse:
             backend = payload.backend.strip().lower()
-            if backend not in {OPENAI_BACKEND, GEMINI_BACKEND}:
+            if backend not in {OPENAI_BACKEND, GEMINI_BACKEND, QWEN_BACKEND}:
                 return JSONResponse({"ok": False, "error": "invalid_backend"}, status_code=400)
 
             api_key = (payload.api_key or "").strip()
+            qwen_realtime_url = (payload.qwen_realtime_url or "").strip()
+            qwen_workspace_id = (payload.qwen_workspace_id or "").strip()
+            qwen_region = (payload.qwen_region or "cn-beijing").strip() or "cn-beijing"
+            endpoint_from_workspace = self._normalize_qwen_console_endpoint(qwen_workspace_id)
+            if endpoint_from_workspace:
+                qwen_realtime_url = endpoint_from_workspace
+                qwen_workspace_id = ""
             if backend == GEMINI_BACKEND and not api_key and not self._has_required_key(GEMINI_BACKEND):
                 return JSONResponse({"ok": False, "error": "empty_key"}, status_code=400)
+            if backend == QWEN_BACKEND:
+                if not api_key and not self._has_key(config.QWEN_API_KEY):
+                    return JSONResponse({"ok": False, "error": "empty_key"}, status_code=400)
+                if not qwen_realtime_url and not qwen_workspace_id and not get_qwen_realtime_url():
+                    return JSONResponse(
+                        {"ok": False, "error": "missing_connection_config"},
+                        status_code=400,
+                    )
+                if qwen_realtime_url and not is_qwen_realtime_url_allowed(qwen_realtime_url):
+                    return JSONResponse({"ok": False, "error": "invalid_realtime_url"}, status_code=400)
+                if qwen_workspace_id and not is_qwen_workspace_id_valid(qwen_workspace_id):
+                    return JSONResponse({"ok": False, "error": "invalid_workspace_id"}, status_code=400)
+                if qwen_workspace_id and qwen_region not in QWEN_REALTIME_REGIONS:
+                    return JSONResponse({"ok": False, "error": "invalid_region"}, status_code=400)
 
             if backend == OPENAI_BACKEND and api_key:
                 self._persist_api_key(api_key)
             if backend == GEMINI_BACKEND and api_key:
                 self._persist_gemini_api_key(api_key)
+            if backend == QWEN_BACKEND and api_key:
+                self._persist_qwen_api_key(api_key)
+            if backend == QWEN_BACKEND:
+                self._persist_qwen_connection(
+                    realtime_url=qwen_realtime_url,
+                    workspace_id=qwen_workspace_id,
+                    region=qwen_region,
+                )
 
             self._persist_backend_choice(backend)
             payload_data = _status_payload()
@@ -464,7 +556,12 @@ class LocalStream:
 
         # If key is still missing -> wait until provided via the settings UI
         if not self._has_required_key(active_backend):
-            key_name = "GEMINI_API_KEY" if active_backend == GEMINI_BACKEND else "OPENAI_API_KEY"
+            if active_backend == GEMINI_BACKEND:
+                key_name = "GEMINI_API_KEY"
+            elif active_backend == QWEN_BACKEND:
+                key_name = "DASHSCOPE_API_KEY and QWEN_REALTIME_URL/QWEN_WORKSPACE_ID"
+            else:
+                key_name = "OPENAI_API_KEY"
             logger.warning("%s not found. Open the app settings page to enter it.", key_name)
             # Poll until the key becomes available (set via the settings UI)
             try:

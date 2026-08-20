@@ -9,6 +9,7 @@ import reachy_mini_conversation_app.config as config_mod
 import reachy_mini_conversation_app.prompts as prompts_mod
 from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
 from reachy_mini_conversation_app.headless_personality import (
+    list_personalities,
     resolve_profile_dir,
     read_instructions_for,
 )
@@ -79,6 +80,20 @@ def test_prompts_load_from_compact_builtin_profile(monkeypatch: pytest.MonkeyPat
 
     assert prompts_mod.get_session_instructions() == expected
     assert read_instructions_for("mad_scientist_assistant") == expected
+
+
+def test_headless_personality_lists_runtime_external_profiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The settings UI should list profiles from the configured runtime root."""
+    profile_dir = tmp_path / "external_profile"
+    profile_dir.mkdir()
+    (profile_dir / "instructions.txt").write_text("External profile instructions.\n", encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIRECTORY", tmp_path)
+
+    assert list_personalities() == ["external_profile"]
+    assert resolve_profile_dir("external_profile") == profile_dir
 
 
 def test_session_voice_defaults_follow_selected_backend(monkeypatch: pytest.MonkeyPatch) -> None:

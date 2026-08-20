@@ -1,5 +1,6 @@
 const OPENAI_BACKEND = "openai";
 const GEMINI_BACKEND = "gemini";
+const QWEN_BACKEND = "qwen";
 const BACKEND_META = {
   [OPENAI_BACKEND]: {
     label: "OpenAI Realtime",
@@ -27,16 +28,36 @@ const BACKEND_META = {
     requiredCredentialsCopy: "Gemini Live requires your own GEMINI_API_KEY before you can switch.",
     note: "OpenAI Realtime uses the distributed OpenAI key. Gemini Live needs your own GEMINI_API_KEY.",
   },
+  [QWEN_BACKEND]: {
+    label: "Qwen Realtime",
+    formTitle: "Connect Qwen Realtime",
+    inputLabel: "DASHSCOPE_API_KEY",
+    placeholder: "sk-...",
+    saveButton: "Save token",
+    changeButton: "Change Qwen token",
+    readyTitle: "Qwen Realtime ready",
+    readyCopy: "Qwen Realtime is configured. Your saved DashScope token and realtime endpoint are ready to use.",
+    formCopy: "Paste your DASHSCOPE_API_KEY and workspace ID (or full WebSocket URL). Both stay in this app's local configuration.",
+    requiredCredentialsCopy: "Qwen Realtime requires DASHSCOPE_API_KEY plus QWEN_REALTIME_URL or QWEN_WORKSPACE_ID before you can switch.",
+    note: "OpenAI Realtime uses the distributed OpenAI key. Gemini Live needs GEMINI_API_KEY. Qwen Realtime needs DASHSCOPE_API_KEY plus QWEN_REALTIME_URL or QWEN_WORKSPACE_ID.",
+  },
 };
 
 function backendHasCredentials(status, backend) {
-  return backend === GEMINI_BACKEND ? !!status.has_gemini_key : !!status.has_openai_key;
+  if (backend === GEMINI_BACKEND) return !!status.has_gemini_key;
+  if (backend === QWEN_BACKEND) return !!status.has_qwen_key;
+  return !!status.has_openai_key;
 }
 
 function backendCanProceed(status, backend) {
   if (backend === GEMINI_BACKEND) {
     return status.can_proceed_with_gemini !== undefined
       ? !!status.can_proceed_with_gemini
+      : backendHasCredentials(status, backend);
+  }
+  if (backend === QWEN_BACKEND) {
+    return status.can_proceed_with_qwen !== undefined
+      ? !!status.can_proceed_with_qwen
       : backendHasCredentials(status, backend);
   }
   return status.can_proceed_with_openai !== undefined
@@ -49,7 +70,11 @@ function backendMeta(backend) {
 }
 
 function formatBackendNote(text) {
-  return text.replace("GEMINI_API_KEY", "<code>GEMINI_API_KEY</code>");
+  return text
+    .replace("GEMINI_API_KEY", "<code>GEMINI_API_KEY</code>")
+    .replace("DASHSCOPE_API_KEY", "<code>DASHSCOPE_API_KEY</code>")
+    .replace("QWEN_REALTIME_URL", "<code>QWEN_REALTIME_URL</code>")
+    .replace("QWEN_WORKSPACE_ID", "<code>QWEN_WORKSPACE_ID</code>");
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -113,8 +138,16 @@ async function validateKey(key) {
   return data;
 }
 
-async function saveBackendConfig(backend, key = "") {
+async function saveBackendConfig(backend, key = "", qwenConnection = "", qwenRegion = "cn-beijing") {
   const body = { backend, api_key: key };
+  if (backend === QWEN_BACKEND && qwenConnection) {
+    if (qwenConnection.startsWith("wss://")) {
+      body.qwen_realtime_url = qwenConnection;
+    } else {
+      body.qwen_workspace_id = qwenConnection;
+      body.qwen_region = qwenRegion;
+    }
+  }
   const resp = await fetch("/backend_config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -267,6 +300,9 @@ async function init() {
   const saveBtn = document.getElementById("save-btn");
   const changeKeyBtn = document.getElementById("change-key-btn");
   const input = document.getElementById("api-key");
+  const qwenConnectionFields = document.getElementById("qwen-connection-fields");
+  const qwenConnection = document.getElementById("qwen-connection");
+  const qwenRegion = document.getElementById("qwen-region");
 
   // Personality elements
   const pSelect = document.getElementById("personality-select");
@@ -291,7 +327,7 @@ async function init() {
   let editingCredentials = false;
 
   function setSelectedBackend(backend) {
-    selectedBackend = backend === GEMINI_BACKEND ? GEMINI_BACKEND : OPENAI_BACKEND;
+    selectedBackend = BACKEND_META[backend] ? backend : OPENAI_BACKEND;
     backendInputs.forEach((radio) => {
       radio.checked = radio.value === selectedBackend;
     });
@@ -320,6 +356,7 @@ async function init() {
     input.placeholder = meta.placeholder;
     saveBtn.textContent = meta.saveButton;
     changeKeyBtn.textContent = meta.changeButton;
+    show(qwenConnectionFields, selectedBackend === QWEN_BACKEND);
 
     show(configuredPanel, canProceedWithSelectedBackend && !editingCredentials);
     show(formPanel, editingCredentials || !canProceedWithSelectedBackend);
@@ -361,9 +398,13 @@ async function init() {
     has_key: false,
     has_openai_key: false,
     has_gemini_key: false,
+    has_qwen_key: false,
+    has_qwen_api_key: false,
+    has_qwen_connection_config: false,
     can_proceed: false,
     can_proceed_with_openai: false,
     can_proceed_with_gemini: false,
+    can_proceed_with_qwen: false,
     requires_restart: false,
   };
   setSelectedBackend(st.backend_provider || OPENAI_BACKEND);
@@ -381,6 +422,9 @@ async function init() {
   // Remove error styling when user starts typing
   input.addEventListener("input", () => {
     input.classList.remove("error");
+  });
+  qwenConnection.addEventListener("input", () => {
+    qwenConnection.classList.remove("error");
   });
 
   backendInputs.forEach((radio) => {
@@ -405,12 +449,20 @@ async function init() {
 
   saveBtn.addEventListener("click", async () => {
     const key = input.value.trim();
-    if (!key) {
+    const connection = qwenConnection.value.trim();
+    const hasSavedKey = selectedBackend === QWEN_BACKEND && !!st.has_qwen_api_key;
+    const hasSavedConnection = selectedBackend === QWEN_BACKEND && !!st.has_qwen_connection_config;
+    if (!key && !hasSavedKey) {
       setStatusMessage(statusEl, "Please enter a valid key.", "warn");
       input.classList.add("error");
       return;
     }
-    setStatusMessage(statusEl, selectedBackend === GEMINI_BACKEND ? "Saving token..." : "Validating API key...");
+    if (selectedBackend === QWEN_BACKEND && !connection && !hasSavedConnection) {
+      setStatusMessage(statusEl, "Please enter a Qwen workspace ID or full WebSocket URL.", "warn");
+      qwenConnection.classList.add("error");
+      return;
+    }
+    setStatusMessage(statusEl, selectedBackend === OPENAI_BACKEND ? "Validating API key..." : "Saving token...");
     input.classList.remove("error");
     try {
       if (selectedBackend === OPENAI_BACKEND) {
@@ -422,9 +474,9 @@ async function init() {
         }
         setStatusMessage(statusEl, "Key valid! Saving...", "ok");
       } else {
-        setStatusMessage(statusEl, "Saving Gemini token...", "ok");
+        setStatusMessage(statusEl, `Saving ${backendMeta(selectedBackend).label} token...`, "ok");
       }
-      await saveBackendConfig(selectedBackend, key);
+      await saveBackendConfig(selectedBackend, key, connection, qwenRegion.value);
       setStatusMessage(statusEl, "Saved. Reloading…", "ok");
       window.location.reload();
     } catch (e) {
@@ -434,8 +486,8 @@ async function init() {
       } else {
         setStatusMessage(
           statusEl,
-          selectedBackend === GEMINI_BACKEND
-            ? "Failed to save Gemini token. Please try again."
+          selectedBackend !== OPENAI_BACKEND
+            ? `Failed to save ${backendMeta(selectedBackend).label} token. Please try again.`
             : "Failed to validate/save key. Please try again.",
           "error",
         );

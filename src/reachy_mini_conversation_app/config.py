@@ -1,7 +1,9 @@
 import os
+import re
 import sys
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit, parse_qsl, urlencode, urlunsplit
 from importlib.resources import files
 
 from dotenv import find_dotenv, load_dotenv
@@ -69,16 +71,29 @@ GEMINI_AVAILABLE_VOICES: list[str] = [
     "Zephyr",
 ]
 
+# Voices supported by DashScope/Qwen Omni Realtime examples.
+QWEN_AVAILABLE_VOICES: list[str] = [
+    "Tina",
+    "Cherry",
+    "Serena",
+    "Ethan",
+    "Chelsie",
+]
+
 OPENAI_BACKEND = "openai"
 GEMINI_BACKEND = "gemini"
+QWEN_BACKEND = "qwen"
+QWEN_REALTIME_REGIONS = {"cn-beijing", "ap-southeast-1"}
 DEFAULT_BACKEND_PROVIDER = OPENAI_BACKEND
 DEFAULT_MODEL_NAME_BY_BACKEND = {
     OPENAI_BACKEND: "gpt-realtime",
     GEMINI_BACKEND: "gemini-3.1-flash-live-preview",
+    QWEN_BACKEND: "qwen3.5-omni-flash-realtime",
 }
 DEFAULT_VOICE_BY_BACKEND = {
     OPENAI_BACKEND: "cedar",
     GEMINI_BACKEND: "Kore",
+    QWEN_BACKEND: "Tina",
 }
 
 logger = logging.getLogger(__name__)
@@ -90,6 +105,12 @@ def _is_gemini_model_name(model_name: str | None) -> bool:
     return candidate.startswith("gemini")
 
 
+def _is_qwen_model_name(model_name: str | None) -> bool:
+    """Return True when the provided model name targets DashScope/Qwen."""
+    candidate = (model_name or "").strip().lower()
+    return candidate.startswith("qwen")
+
+
 def _normalize_backend_provider(
     backend_provider: str | None = None,
     model_name: str | None = None,
@@ -98,6 +119,8 @@ def _normalize_backend_provider(
     candidate = (backend_provider or "").strip().lower()
     if candidate in DEFAULT_MODEL_NAME_BY_BACKEND:
         return candidate
+    if _is_qwen_model_name(model_name):
+        return QWEN_BACKEND
     return GEMINI_BACKEND if _is_gemini_model_name(model_name) else DEFAULT_BACKEND_PROVIDER
 
 
@@ -111,7 +134,13 @@ def _resolve_model_name(
     if candidate:
         if normalized_backend == GEMINI_BACKEND and _is_gemini_model_name(candidate):
             return candidate
-        if normalized_backend == OPENAI_BACKEND and not _is_gemini_model_name(candidate):
+        if normalized_backend == QWEN_BACKEND and _is_qwen_model_name(candidate):
+            return candidate
+        if (
+            normalized_backend == OPENAI_BACKEND
+            and not _is_gemini_model_name(candidate)
+            and not _is_qwen_model_name(candidate)
+        ):
             return candidate
         logger.warning(
             "MODEL_NAME=%r does not match BACKEND_PROVIDER=%r, using default %r",
@@ -211,6 +240,10 @@ class Config:
     # Required (one of these depending on BACKEND_PROVIDER)
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # The key is downloaded in console.py if needed
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+    QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
+    QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
+    QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
 
     # Optional
     BACKEND_PROVIDER = _normalize_backend_provider(
@@ -221,7 +254,6 @@ class Config:
     HF_HOME = os.getenv("HF_HOME", "./cache")
     LOCAL_VISION_MODEL = os.getenv("LOCAL_VISION_MODEL", "HuggingFaceTB/SmolVLM2-2.2B-Instruct")
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
-
     logger.debug(
         "Backend provider: %s, Model: %s, HF_HOME: %s, Vision Model: %s",
         BACKEND_PROVIDER,
@@ -307,6 +339,10 @@ def refresh_runtime_config_from_env() -> None:
     """Refresh mutable runtime config fields from the current environment."""
     config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     config.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    config.QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+    config.QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
+    config.QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
+    config.QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
     config.BACKEND_PROVIDER = _normalize_backend_provider(
         os.getenv("BACKEND_PROVIDER"),
         os.getenv("MODEL_NAME"),
@@ -332,6 +368,8 @@ def get_available_voices_for_backend(backend: str | None = None) -> list[str]:
     normalized_backend = get_backend_choice() if backend is None else _normalize_backend_provider(backend)
     if normalized_backend == GEMINI_BACKEND:
         return list(GEMINI_AVAILABLE_VOICES)
+    if normalized_backend == QWEN_BACKEND:
+        return list(QWEN_AVAILABLE_VOICES)
     return list(AVAILABLE_VOICES)
 
 
@@ -344,6 +382,56 @@ def get_default_voice_for_backend(backend: str | None = None) -> str:
 def is_gemini_model() -> bool:
     """Return True if the configured MODEL_NAME is a Gemini Live model."""
     return get_backend_choice() == GEMINI_BACKEND
+
+
+def is_qwen_model() -> bool:
+    """Return True if the configured MODEL_NAME is a DashScope/Qwen realtime model."""
+    return get_backend_choice() == QWEN_BACKEND
+
+
+def get_qwen_realtime_url(model_name: str | None = None) -> str | None:
+    """Return the DashScope/Qwen Realtime WebSocket URL."""
+    model = (model_name or getattr(config, "MODEL_NAME", None) or DEFAULT_MODEL_NAME_BY_BACKEND[QWEN_BACKEND]).strip()
+    configured_url = (getattr(config, "QWEN_REALTIME_URL", None) or "").strip()
+    if configured_url:
+        parts = urlsplit(configured_url)
+        query_items = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query_items.setdefault("model", model)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query_items), parts.fragment))
+
+    workspace_id = (getattr(config, "QWEN_WORKSPACE_ID", None) or "").strip()
+    if not workspace_id:
+        return None
+
+    region = (getattr(config, "QWEN_REGION", None) or "cn-beijing").strip() or "cn-beijing"
+    query_string = urlencode({"model": model})
+    return f"wss://{workspace_id}.{region}.maas.aliyuncs.com/api-ws/v1/realtime?{query_string}"
+
+
+def is_qwen_workspace_id_valid(workspace_id: str | None) -> bool:
+    """Return whether a workspace ID is safe to use as a hostname label."""
+    return bool(workspace_id and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", workspace_id))
+
+
+def is_qwen_realtime_url_allowed(url: str | None) -> bool:
+    """Return whether a URL is an official Alibaba Cloud Qwen Realtime endpoint."""
+    if not url:
+        return False
+    parts = urlsplit(url)
+    hostname = (parts.hostname or "").lower()
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    valid_suffixes = tuple(f".{region}.maas.aliyuncs.com" for region in QWEN_REALTIME_REGIONS)
+    return (
+        parts.scheme == "wss"
+        and parts.username is None
+        and parts.password is None
+        and port in {None, 443}
+        and hostname.endswith(valid_suffixes)
+        and parts.path == "/api-ws/v1/realtime"
+    )
 
 
 def set_custom_profile(profile: str | None) -> None:

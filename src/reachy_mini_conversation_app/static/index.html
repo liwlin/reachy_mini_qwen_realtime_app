@@ -16,7 +16,7 @@
       <header class="hero">
         <div class="pill">Headless control</div>
         <h1>Reachy Mini Conversation</h1>
-        <p class="subtitle">Choose a realtime backend, add a Gemini token if needed, and tweak personalities without the full UI.</p>
+        <p class="subtitle">Choose a realtime backend, add a provider token if needed, and tweak personalities without the full UI.</p>
       </header>
 
       <aside class="privacy-notice" role="note" aria-label="Privacy notice">
@@ -30,6 +30,10 @@
           <a href="https://ai.google.dev/gemini-api/docs/data-usage" target="_blank" rel="noopener">
             Gemini API data usage policy
           </a>
+          and Alibaba Cloud Model Studio's
+          <a href="https://help.aliyun.com/zh/model-studio/data-security" target="_blank" rel="noopener">
+            data security guidance
+          </a>
           for details.
         </p>
 
@@ -38,7 +42,7 @@
 
           <p>
             In privacy-sensitive environments, use <code>--local-vision</code> to process images on-device. See the
-            <a href="https://github.com/pollen-robotics/reachy_mini_conversation_app/blob/main/README.md" target="_blank" rel="noopener">
+            <a href="https://github.com/liwlin/reachy_mini_qwen_realtime_app/blob/main/README.md" target="_blank" rel="noopener">
               project README
             </a>
             for full setup instructions. An open-source approach is in the works – stay tuned for its release.
@@ -55,7 +59,8 @@
           <span id="backend-chip" class="chip">Required</span>
         </div>
         <p id="backend-note" class="muted backend-note">
-          OpenAI Realtime uses the distributed OpenAI key. Gemini Live needs your own <code>GEMINI_API_KEY</code>.
+          OpenAI Realtime uses the distributed OpenAI key. Gemini Live needs your own provider key.
+          Qwen Realtime needs your provider key plus a Bailian/DashScope realtime workspace endpoint.
         </p>
         <p class="muted backend-note">
           Backend changes are saved here, then applied after you restart Reachy Mini Conversation from the dashboard or desktop app.
@@ -73,6 +78,13 @@
             <span class="backend-choice-body">
               <span class="backend-choice-title">Gemini Live</span>
               <span class="backend-choice-copy">Bring your own <code>GEMINI_API_KEY</code> to try Gemini.</span>
+            </span>
+          </label>
+          <label class="backend-choice" data-backend-card="qwen">
+            <input type="radio" name="backend" value="qwen" />
+            <span class="backend-choice-body">
+              <span class="backend-choice-title">Qwen Realtime</span>
+              <span class="backend-choice-copy">Bring your own <code>DASHSCOPE_API_KEY</code> and realtime endpoint.</span>
             </span>
           </label>
         </div>
@@ -105,6 +117,20 @@
         <p id="form-copy" class="muted">Paste your API key once and we will store it locally for the headless conversation loop.</p>
         <label id="api-key-label" for="api-key">OpenAI API Key</label>
         <input id="api-key" type="password" placeholder="sk-..." autocomplete="off" />
+        <div id="qwen-connection-fields" class="hidden">
+          <label for="qwen-connection">Qwen workspace ID or full WebSocket URL</label>
+          <input
+            id="qwen-connection"
+            type="text"
+            placeholder="Workspace ID or wss://.../api-ws/v1/realtime"
+            autocomplete="off"
+          />
+          <label for="qwen-region">Alibaba Cloud region</label>
+          <select id="qwen-region">
+            <option value="cn-beijing">China (Beijing)</option>
+            <option value="ap-southeast-1">Singapore</option>
+          </select>
+        </div>
         <div class="actions">
           <button id="save-btn">Save key</button>
           <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>

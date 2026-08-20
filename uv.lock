@@ -4228,106 +4228,6 @@ wheels = [
 ]
 
 [[package]]
-name = "reachy-mini-conversation-app"
-version = "0.5.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiortc" },
-    { name = "av" },
-    { name = "fastrtc" },
-    { name = "google-genai" },
-    { name = "gradio" },
-    { name = "gradio-client" },
-    { name = "huggingface-hub" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "reachy-mini" },
-    { name = "reachy-mini-dances-library" },
-    { name = "reachy-mini-toolbox" },
-]
-
-[package.optional-dependencies]
-all-vision = [
-    { name = "accelerate" },
-    { name = "mediapipe" },
-    { name = "num2words" },
-    { name = "opencv-python" },
-    { name = "supervision" },
-    { name = "torch" },
-    { name = "transformers" },
-    { name = "ultralytics" },
-]
-local-vision = [
-    { name = "accelerate" },
-    { name = "num2words" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-mediapipe-vision = [
-    { name = "mediapipe" },
-]
-yolo-vision = [
-    { name = "opencv-python" },
-    { name = "supervision" },
-    { name = "ultralytics" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "python-semantic-release" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", marker = "extra == 'all-vision'", specifier = ">=1.13.0" },
-    { name = "accelerate", marker = "extra == 'local-vision'", specifier = ">=1.13.0" },
-    { name = "aiortc", specifier = ">=1.13.0" },
-    { name = "av" },
-    { name = "fastrtc", specifier = ">=0.0.34" },
-    { name = "google-genai", specifier = ">=1.0.0" },
-    { name = "gradio", specifier = "==5.50.1.dev1" },
-    { name = "gradio-client", specifier = ">=1.13.3" },
-    { name = "huggingface-hub", specifier = "==1.3.0" },
-    { name = "mediapipe", marker = "extra == 'all-vision'", specifier = "==0.10.14" },
-    { name = "mediapipe", marker = "extra == 'mediapipe-vision'", specifier = "==0.10.14" },
-    { name = "num2words", marker = "extra == 'all-vision'" },
-    { name = "num2words", marker = "extra == 'local-vision'" },
-    { name = "openai", specifier = ">=2.30.0" },
-    { name = "opencv-python", marker = "extra == 'all-vision'", specifier = ">=4.13.0.92" },
-    { name = "opencv-python", marker = "extra == 'yolo-vision'", specifier = ">=4.13.0.92" },
-    { name = "python-dotenv" },
-    { name = "reachy-mini", specifier = ">=1.6.4" },
-    { name = "reachy-mini-dances-library" },
-    { name = "reachy-mini-toolbox" },
-    { name = "supervision", marker = "extra == 'all-vision'" },
-    { name = "supervision", marker = "extra == 'yolo-vision'" },
-    { name = "torch", marker = "extra == 'all-vision'", specifier = ">=2.1" },
-    { name = "torch", marker = "extra == 'local-vision'", specifier = ">=2.1" },
-    { name = "transformers", marker = "extra == 'all-vision'", specifier = "==5.3.0" },
-    { name = "transformers", marker = "extra == 'local-vision'", specifier = "==5.3.0" },
-    { name = "ultralytics", marker = "extra == 'all-vision'" },
-    { name = "ultralytics", marker = "extra == 'yolo-vision'" },
-]
-provides-extras = ["local-vision", "yolo-vision", "mediapipe-vision", "all-vision"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = "==1.18.2" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "python-semantic-release", specifier = ">=10.5.3" },
-    { name = "ruff", specifier = "==0.12.0" },
-    { name = "types-requests" },
-]
-
-[[package]]
 name = "reachy-mini-dances-library"
 version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4401,6 +4301,110 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/56/58e51f11ef97f4264552ab7b4a990c6f92cf917c17cb7d16f7d18a6ad26b/reachy_mini_motor_controller-1.5.5-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:c9a1ff08b4538cf75c4c560cc1d416a8ec072186787aff75577ab4651a01de86", size = 848838, upload-time = "2026-02-25T14:08:19.069Z" },
     { url = "https://files.pythonhosted.org/packages/e6/d4/04f924acd245b2d9b24c06f231ac157f56c66b1eea123650205ba3abdfaa/reachy_mini_motor_controller-1.5.5-cp314-cp314-win32.whl", hash = "sha256:8de3555141821daecfd7cc3dc2b421ba2d42606be41c70e3ed5e253a84a1445c", size = 375152, upload-time = "2026-02-25T14:08:31.382Z" },
     { url = "https://files.pythonhosted.org/packages/71/30/bce22d5756afc517ae2591ffab6383413edbf333e459dc69db3cba93503c/reachy_mini_motor_controller-1.5.5-cp314-cp314-win_amd64.whl", hash = "sha256:f5110ea60d095d252efc06adfeda32df5a0dd4e2317c6e4098bf3ba602b2740d", size = 397406, upload-time = "2026-02-25T14:08:25.441Z" },
+]
+
+[[package]]
+name = "reachy-mini-qwen-realtime-app"
+version = "0.5.0+qwen.1"
+source = { editable = "." }
+dependencies = [
+    { name = "aiortc" },
+    { name = "av" },
+    { name = "fastrtc" },
+    { name = "google-genai" },
+    { name = "gradio" },
+    { name = "gradio-client" },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "reachy-mini" },
+    { name = "reachy-mini-dances-library" },
+    { name = "reachy-mini-toolbox" },
+    { name = "websockets" },
+]
+
+[package.optional-dependencies]
+all-vision = [
+    { name = "accelerate" },
+    { name = "mediapipe" },
+    { name = "num2words" },
+    { name = "opencv-python" },
+    { name = "supervision" },
+    { name = "torch" },
+    { name = "transformers" },
+    { name = "ultralytics" },
+]
+local-vision = [
+    { name = "accelerate" },
+    { name = "num2words" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+mediapipe-vision = [
+    { name = "mediapipe" },
+]
+yolo-vision = [
+    { name = "opencv-python" },
+    { name = "supervision" },
+    { name = "ultralytics" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "python-semantic-release" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", marker = "extra == 'all-vision'", specifier = ">=1.13.0" },
+    { name = "accelerate", marker = "extra == 'local-vision'", specifier = ">=1.13.0" },
+    { name = "aiortc", specifier = ">=1.13.0" },
+    { name = "av" },
+    { name = "fastrtc", specifier = ">=0.0.34" },
+    { name = "google-genai", specifier = ">=1.0.0" },
+    { name = "gradio", specifier = "==5.50.1.dev1" },
+    { name = "gradio-client", specifier = ">=1.13.3" },
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "huggingface-hub", specifier = "==1.3.0" },
+    { name = "mediapipe", marker = "extra == 'all-vision'", specifier = "==0.10.14" },
+    { name = "mediapipe", marker = "extra == 'mediapipe-vision'", specifier = "==0.10.14" },
+    { name = "num2words", marker = "extra == 'all-vision'" },
+    { name = "num2words", marker = "extra == 'local-vision'" },
+    { name = "openai", specifier = ">=2.30.0" },
+    { name = "opencv-python", marker = "extra == 'all-vision'", specifier = ">=4.13.0.92" },
+    { name = "opencv-python", marker = "extra == 'yolo-vision'", specifier = ">=4.13.0.92" },
+    { name = "python-dotenv" },
+    { name = "reachy-mini", specifier = ">=1.6.4" },
+    { name = "reachy-mini-dances-library" },
+    { name = "reachy-mini-toolbox" },
+    { name = "supervision", marker = "extra == 'all-vision'" },
+    { name = "supervision", marker = "extra == 'yolo-vision'" },
+    { name = "torch", marker = "extra == 'all-vision'", specifier = ">=2.1" },
+    { name = "torch", marker = "extra == 'local-vision'", specifier = ">=2.1" },
+    { name = "transformers", marker = "extra == 'all-vision'", specifier = "==5.3.0" },
+    { name = "transformers", marker = "extra == 'local-vision'", specifier = "==5.3.0" },
+    { name = "ultralytics", marker = "extra == 'all-vision'" },
+    { name = "ultralytics", marker = "extra == 'yolo-vision'" },
+    { name = "websockets", specifier = ">=15.0.1" },
+]
+provides-extras = ["local-vision", "yolo-vision", "mediapipe-vision", "all-vision"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = "==1.18.2" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "python-semantic-release", specifier = ">=10.5.3" },
+    { name = "ruff", specifier = "==0.12.0" },
+    { name = "types-requests" },
 ]
 
 [[package]]

@@ -96,6 +96,23 @@ pip install -e .[dev]                   # Development tools
 
 ## Configuration
 
+### Optional Qwen Realtime backend
+
+Hugging Face remains the default backend. To opt into Alibaba Cloud Qwen Omni Realtime, configure:
+
+```env
+REALTIME_BACKEND=qwen
+DASHSCOPE_API_KEY=your-key
+QWEN_WORKSPACE_ID=your-workspace-id
+QWEN_REGION=cn-beijing
+QWEN_MODEL_NAME=qwen3.5-omni-flash-realtime
+```
+
+The Qwen handler reuses the existing local and remote MCP Tool registry, accepts 16 kHz PCM microphone input,
+returns 24 kHz PCM audio, and supports image-buffer camera turns. API keys and workspace identifiers must not be
+committed. The settings UI remains Hugging Face-oriented in this initial provider port; Qwen is configured through
+the app environment.
+
 The default setup uses the Hugging Face backend and does not require an API key.
 
 Copy `.env.example` to `.env` when you want to point Hugging Face at your own local endpoint.

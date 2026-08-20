@@ -13,7 +13,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-08-13T04:33:04.464345Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -2567,6 +2567,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "reachy-mini" },
     { name = "reachy-mini-dances-library" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -2589,6 +2590,7 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "reachy-mini", specifier = ">=1.10.0rc5" },
     { name = "reachy-mini-dances-library" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [package.metadata.requires-dev]

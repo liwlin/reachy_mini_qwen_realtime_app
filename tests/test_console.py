@@ -433,7 +433,7 @@ def test_backend_startup_failure_is_recorded_without_raising(
 
 def test_media_warmup_overlaps_audio_startup_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Audio configuration should run while the media pipelines warm up."""
-    monkeypatch.setattr("reachy_mini_conversation_app.console.has_hf_realtime_target", lambda: True)
+    monkeypatch.setattr("reachy_mini_conversation_app.console.has_realtime_target", lambda: True)
 
     handler = MagicMock()
     handler.shutdown = AsyncMock()

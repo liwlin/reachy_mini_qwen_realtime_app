@@ -4,7 +4,7 @@ import sys
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from urllib.parse import urlsplit, parse_qsl, urlunsplit
+from urllib.parse import urlsplit, parse_qsl, urlencode, urlunsplit
 from importlib.resources import files
 
 from dotenv import find_dotenv, load_dotenv
@@ -61,6 +61,10 @@ HF_AVAILABLE_VOICES: list[str] = [
 ]
 
 HF_BACKEND = "huggingface"
+QWEN_BACKEND = "qwen"
+REALTIME_BACKEND_ENV = "REALTIME_BACKEND"
+QWEN_AVAILABLE_VOICES = ["Tina", "Cherry", "Serena", "Ethan", "Chelsie"]
+QWEN_REALTIME_REGIONS = {"cn-beijing", "ap-southeast-1"}
 HF_REALTIME_CONNECTION_MODE_ENV = "HF_REALTIME_CONNECTION_MODE"
 HF_REALTIME_WS_URL_ENV = "HF_REALTIME_WS_URL"
 REALTIME_TRANSCRIPTION_LANGUAGE_ENV = "REALTIME_TRANSCRIPTION_LANGUAGE"
@@ -318,6 +322,12 @@ class Config:
     HF_REALTIME_WS_URL = os.getenv(HF_REALTIME_WS_URL_ENV)
     REALTIME_TRANSCRIPTION_LANGUAGE = _normalize_transcription_language(os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV))
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
+    REALTIME_BACKEND = (os.getenv(REALTIME_BACKEND_ENV) or HF_BACKEND).strip().lower()
+    QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+    QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
+    QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
+    QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
+    QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "qwen3.5-omni-flash-realtime")
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -430,17 +440,78 @@ def refresh_runtime_config_from_env() -> None:
         os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV)
     )
     config.HF_TOKEN = os.getenv("HF_TOKEN")
+    config.REALTIME_BACKEND = (os.getenv(REALTIME_BACKEND_ENV) or HF_BACKEND).strip().lower()
+    config.QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+    config.QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
+    config.QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
+    config.QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
+    config.QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "qwen3.5-omni-flash-realtime")
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 
 def get_available_voices() -> list[str]:
-    """Return the curated Hugging Face voice list."""
-    return list(HF_AVAILABLE_VOICES)
+    """Return the curated voice list for the selected backend."""
+    return list(QWEN_AVAILABLE_VOICES if get_realtime_backend() == QWEN_BACKEND else HF_AVAILABLE_VOICES)
 
 
 def get_default_voice() -> str:
-    """Return the default Hugging Face voice."""
-    return HF_DEFAULTS.voice
+    """Return the default voice for the selected backend."""
+    return "Tina" if get_realtime_backend() == QWEN_BACKEND else HF_DEFAULTS.voice
+
+
+def get_realtime_backend() -> str:
+    """Return the selected realtime provider, preserving Hugging Face as the default."""
+    backend = (getattr(config, "REALTIME_BACKEND", None) or HF_BACKEND).strip().lower()
+    if backend not in {HF_BACKEND, QWEN_BACKEND}:
+        raise RuntimeError(f"{REALTIME_BACKEND_ENV} must be set to {HF_BACKEND} or {QWEN_BACKEND}.")
+    return backend
+
+
+def get_qwen_realtime_url() -> str | None:
+    """Return the configured Qwen Realtime WebSocket endpoint."""
+    model = (config.QWEN_MODEL_NAME or "qwen3.5-omni-flash-realtime").strip()
+    configured_url = (config.QWEN_REALTIME_URL or "").strip()
+    if configured_url:
+        parts = urlsplit(configured_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.setdefault("model", model)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    workspace_id = (config.QWEN_WORKSPACE_ID or "").strip()
+    region = (config.QWEN_REGION or "cn-beijing").strip()
+    if not workspace_id or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", workspace_id):
+        return None
+    if region not in QWEN_REALTIME_REGIONS:
+        return None
+    return f"wss://{workspace_id}.{region}.maas.aliyuncs.com/api-ws/v1/realtime?{urlencode({'model': model})}"
+
+
+def is_qwen_realtime_url_allowed(url: str | None) -> bool:
+    """Return whether the URL is an official Alibaba Cloud Realtime endpoint."""
+    if not url:
+        return False
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    suffixes = tuple(f".{region}.maas.aliyuncs.com" for region in QWEN_REALTIME_REGIONS)
+    return (
+        parts.scheme == "wss"
+        and parts.username is None
+        and parts.password is None
+        and port in {None, 443}
+        and host.endswith(suffixes)
+        and parts.path == "/api-ws/v1/realtime"
+    )
+
+
+def has_realtime_target() -> bool:
+    """Return whether the selected backend has its required connection settings."""
+    if get_realtime_backend() == QWEN_BACKEND:
+        url = get_qwen_realtime_url()
+        return bool((config.QWEN_API_KEY or "").strip() and is_qwen_realtime_url_allowed(url))
+    return has_hf_realtime_target()
 
 
 def get_hf_session_url() -> str | None:

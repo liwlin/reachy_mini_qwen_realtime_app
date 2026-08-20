@@ -20,6 +20,7 @@ from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_mini_conversation_app.config import (
     HF_BACKEND,
+    QWEN_BACKEND,
     LOCKED_PROFILE,
     HF_REALTIME_WS_URL_ENV,
     HF_LOCAL_CONNECTION_MODE,
@@ -29,10 +30,11 @@ from reachy_mini_conversation_app.config import (
     get_default_voice,
     get_hf_session_url,
     set_custom_profile,
+    has_realtime_target,
     get_available_voices,
     get_hf_direct_ws_url,
+    get_realtime_backend,
     build_hf_direct_ws_url,
-    has_hf_realtime_target,
     parse_hf_direct_target,
     get_hf_connection_selection,
     refresh_runtime_config_from_env,
@@ -532,12 +534,25 @@ class LocalStream:
                 raise
 
         def _status_payload() -> dict[str, object]:
+            backend = get_realtime_backend()
+            backend_connection = self._backend_connection_status()
+            if backend == QWEN_BACKEND:
+                has_qwen_connection = has_realtime_target()
+                return {
+                    "backend": QWEN_BACKEND,
+                    "has_key": has_qwen_connection,
+                    "has_qwen_connection": has_qwen_connection,
+                    "can_proceed": has_qwen_connection,
+                    "can_proceed_with_qwen": has_qwen_connection,
+                    "requires_restart": not self._can_rebuild_handler(),
+                    **backend_connection,
+                }
+
             hf_session_url = get_hf_session_url()
             hf_ws_url = get_hf_direct_ws_url()
             hf_direct_host, hf_direct_port = parse_hf_direct_target(hf_ws_url)
             hf_connection_selection = get_hf_connection_selection()
             has_hf_connection = hf_connection_selection.has_target
-            backend_connection = self._backend_connection_status()
             return {
                 "backend": HF_BACKEND,
                 "has_key": has_hf_connection,
@@ -699,9 +714,15 @@ class LocalStream:
                     await self._sleep_or_restart_requested(self._backend_retry_delay)
                     continue
 
-            if not has_hf_realtime_target():
+            if not has_realtime_target():
+                backend = get_realtime_backend()
                 self._set_backend_connection_state(
-                    "waiting_for_config", f"{HF_REALTIME_WS_URL_ENV} is not configured."
+                    "waiting_for_config",
+                    (
+                        f"{HF_REALTIME_WS_URL_ENV} is not configured."
+                        if backend == HF_BACKEND
+                        else "DASHSCOPE_API_KEY and QWEN_REALTIME_URL/QWEN_WORKSPACE_ID are not configured."
+                    ),
                 )
                 await self._sleep_or_restart_requested(0.5)
                 continue
@@ -758,22 +779,28 @@ class LocalStream:
         # (do this AFTER loading the instance .env so status endpoint sees the right value)
         self._init_settings_ui_if_needed()
 
-        # If the Hugging Face target is still missing -> wait until provided via the settings UI
-        if not has_hf_realtime_target():
-            self._set_backend_connection_state("waiting_for_config", f"{HF_REALTIME_WS_URL_ENV} is not configured.")
+        # If the selected backend target is still missing, keep the settings UI available.
+        if not has_realtime_target():
+            backend = get_realtime_backend()
+            missing_config = (
+                HF_REALTIME_WS_URL_ENV
+                if backend == HF_BACKEND
+                else "DASHSCOPE_API_KEY and QWEN_REALTIME_URL/QWEN_WORKSPACE_ID"
+            )
+            self._set_backend_connection_state("waiting_for_config", f"{missing_config} is not configured.")
             if self._settings_app is None:
                 logger.error(
-                    "%s not found. Set it in the app .env before starting the Hugging Face backend.",
-                    HF_REALTIME_WS_URL_ENV,
+                    "%s not found. Set it in the app .env before starting the selected backend.",
+                    missing_config,
                 )
                 return
-            logger.warning("%s not found. Open the app settings page to configure it.", HF_REALTIME_WS_URL_ENV)
+            logger.warning("%s not found. Open the app settings page to configure it.", missing_config)
             # Poll until a target becomes available (set via the settings UI)
             try:
-                while not self._stop_event.is_set() and not has_hf_realtime_target():
+                while not self._stop_event.is_set() and not has_realtime_target():
                     time.sleep(0.2)
             except KeyboardInterrupt:
-                logger.info("Interrupted while waiting for Hugging Face configuration.")
+                logger.info("Interrupted while waiting for backend configuration.")
                 return
             if self._stop_event.is_set():
                 return

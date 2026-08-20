@@ -19,6 +19,9 @@ dependencies = [
     #OpenAI (used by the Hugging Face backend)
     "openai==2.28.0",
 
+    #Qwen Realtime
+    "websockets>=15.0.1",
+
     #Reachy mini
     "reachy_mini_dances_library",
     "reachy-mini>=1.10.0rc5",

@@ -87,8 +87,10 @@ def run(
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
     from reachy_mini_conversation_app.moves import MovementManager
     from reachy_mini_conversation_app.config import (
+        QWEN_BACKEND,
         HF_LOCAL_CONNECTION_MODE,
         set_instance_path,
+        get_realtime_backend,
         get_hf_connection_selection,
         resolve_app_timeout_minutes,
         refresh_runtime_config_from_env,
@@ -120,10 +122,14 @@ def run(
         except Exception as e:
             logger.warning("Failed to load startup settings: %s", e)
 
-    logger.info(
-        "Configured Hugging Face realtime backend, connection mode: %s",
-        get_hf_connection_selection().mode,
-    )
+    realtime_backend = get_realtime_backend()
+    if realtime_backend == QWEN_BACKEND:
+        logger.info("Configured Qwen Realtime backend")
+    else:
+        logger.info(
+            "Configured Hugging Face realtime backend, connection mode: %s",
+            get_hf_connection_selection().mode,
+        )
 
     from reachy_mini_conversation_app.console import LocalStream
     from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
@@ -165,7 +171,17 @@ def run(
     )
 
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
-        """Build a Hugging Face realtime handler for the current runtime config."""
+        """Build the selected realtime handler for the current runtime config."""
+        if get_realtime_backend() == QWEN_BACKEND:
+            from reachy_mini_conversation_app.qwen_realtime import QwenRealtimeHandler
+
+            logger.info("Using Qwen Realtime handler")
+            return QwenRealtimeHandler(
+                deps,
+                instance_path=instance_path,
+                startup_voice=startup_voice,
+            )
+
         from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
 
         hf_connection_selection = get_hf_connection_selection()

@@ -14,6 +14,10 @@ tags:
 
 # Reachy Mini Qwen Realtime
 
+[![Release](https://img.shields.io/github/v/release/liwlin/reachy_mini_qwen_realtime_app?include_prereleases&label=community%20release)](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases/tag/v0.5.0-qwen.1)
+[![Upstream proposal](https://img.shields.io/badge/upstream-issue%20%23539-blue)](https://github.com/pollen-robotics/reachy_mini_conversation_app/issues/539)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+
 Community fork of Pollen Robotics' Reachy Mini Conversation App, adding Qwen Omni Realtime, DashScope/Bailian configuration, camera-grounded vision, Function Tools, and optional MCP web search while retaining OpenAI and Gemini compatibility.
 
 > Based on [`pollen-robotics/reachy_mini_conversation_app`](https://github.com/pollen-robotics/reachy_mini_conversation_app) v0.5.0. This community fork is not an official Pollen Robotics release.
@@ -22,12 +26,14 @@ Community fork of Pollen Robotics' Reachy Mini Conversation App, adding Qwen Omn
 
 ## Table of contents
 - [Overview](#overview)
+- [Community release](#community-release)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running the app](#running-the-app)
 - [LLM tools](#llm-tools-exposed-to-the-assistant)
 - [Advanced features](#advanced-features)
+- [Upstream coordination](#upstream-coordination)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -39,6 +45,56 @@ Community fork of Pollen Robotics' Reachy Mini Conversation App, adding Qwen Omn
 - Vision processing uses the selected realtime backend by default (when camera tool is used), with optional on-device local vision using SmolVLM2 (CPU/GPU/MPS) via `--local-vision`.
 - Layered motion system queues primary moves (dances, emotions, goto poses, breathing) while blending speech-reactive wobble and head-tracking.
 - Async tool dispatch integrates robot motion, camera capture, and optional head-tracking capabilities through a Gradio web UI with live transcripts.
+
+## Community release
+
+The core contribution of this fork is a direct, opt-in Qwen Omni Realtime path for Reachy Mini—not a generic text-chat wrapper. It preserves the robot's realtime interaction loop while adapting provider-specific audio, vision, and Function Tool events:
+
+- 16 kHz PCM microphone input and 24 kHz PCM speech output over DashScope/Bailian WebSocket Realtime.
+- Camera frames committed through Qwen's image buffer, with microphone traffic serialized around manual-VAD image turns.
+- Existing camera, motion, dance, emotion, and profile tools converted to Qwen's nested function schema.
+- Optional Exa MCP search exposed as a normal Function Tool, so web lookup can coexist with camera and robot actions. Qwen's built-in `enable_search` cannot be combined with Function Tools.
+- Credentials restricted to allowlisted official Alibaba Cloud Realtime endpoints; tool results and external search output remain bounded.
+
+### Validation snapshot
+
+| Capability | Evidence | Status |
+|---|---|---|
+| Realtime Chinese voice conversation | Wireless hardware conversation and audio playback | ✅ Verified |
+| Camera-grounded visual response | Live camera request described the actual people and workspace in view | ✅ Verified |
+| Robot Function Tools | Camera, motion, dance, and emotion tools registered with Qwen | ✅ Verified |
+| Exa MCP web search | Wireless deployment returned sourced current-weather results and spoken audio | ✅ Verified |
+| Camera and search coexistence | Both tools registered in the same Qwen session | ✅ Verified |
+| Automated regression | 115 non-vision tests passed; one optional local-vision test deselected | ✅ Verified |
+
+Download the packaged community build from [v0.5.0-qwen.1](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases/tag/v0.5.0-qwen.1).
+
+> [!NOTE]
+> This release is based on upstream v0.5.0. Upstream v1 now has provider-neutral MCP Tool Spaces and a maintained Pollen Robotics search Space. Exa is included here as a v0.5 community integration; the upstream Qwen Draft PR intentionally reuses v1's generic MCP architecture and does not submit a second search client.
+
+### Regional connectivity note
+
+This project was validated on a network where `huggingface.co` login and app discovery were unavailable, while the official Qwen/DashScope Realtime endpoint, Exa MCP, GitHub release download, and the robot's local daemon remained reachable. Installing the community wheel independently of the Hugging Face catalog restored realtime voice, vision, and tool use without requiring Hugging Face sign-in for the conversation path.
+
+This is a tested fallback path, not a fix for Reachy Mini Control's Hugging Face OAuth or Discovery/App Store. Those upstream problems are already tracked in [conversation app issue #456](https://github.com/pollen-robotics/reachy_mini_conversation_app/issues/456) and [desktop app issue #293](https://github.com/pollen-robotics/reachy-mini-desktop-app/issues/293). Features that independently download Hugging Face datasets or local-vision models may still require Hugging Face access, a configured mirror, or a populated cache.
+
+<details>
+<summary><b>中文快速说明</b></summary>
+
+此社区版的核心价值是让 Reachy Mini 直接使用 Qwen Omni Realtime，同时保留语音、摄像头视觉、舞蹈、表情和动作工具。Exa MCP 作为普通 `web_search` 工具接入，因此不会像 Qwen 内置 `enable_search` 一样与 camera/动作工具互斥。
+
+快速使用：
+
+1. 从 [Release 页面](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases/tag/v0.5.0-qwen.1) 下载 wheel。
+2. 在应用环境中配置 `BACKEND_PROVIDER=qwen`、`DASHSCOPE_API_KEY`，以及 workspace ID 或完整官方 WebSocket URL。
+3. 需要网络搜索时，在当前 profile 的 `tools.txt` 中加入 `web_search`。Exa 可匿名限量使用，高频使用建议配置 `EXA_API_KEY`。
+4. 启动 `reachy-mini-qwen-realtime-app`，即可进行实时语音、视觉提问和网络搜索。
+
+API Key、摄像头图片和麦克风音频不会发送给 Exa；Exa 只接收模型生成的文字搜索查询。
+
+在 `huggingface.co` 登录和应用发现不可用的网络中，本项目已通过 GitHub wheel 本地安装，并使用 Qwen/DashScope 与 Exa 恢复对话、视觉和搜索。该方案是替代运行路径，不会修复 Reachy Mini Control 自身的 Hugging Face 登录或应用商店问题；相关问题见 [#456](https://github.com/pollen-robotics/reachy_mini_conversation_app/issues/456) 和 [desktop #293](https://github.com/pollen-robotics/reachy-mini-desktop-app/issues/293)。
+
+</details>
 
 ## Architecture
 
@@ -177,7 +233,7 @@ Qwen Realtime uses a different WebSocket endpoint from OpenAI and Gemini. The ap
 > [!NOTE]
 > Qwen Realtime voices are curated separately: Tina (default for Qwen 3.5), Cherry, Serena, Ethan, Chelsie. If your profile's `voice.txt` specifies an OpenAI/Gemini voice, it falls back to Tina.
 
-### Optional MCP web search
+### Optional Exa MCP web search (v0.5 community fork)
 
 Qwen's built-in `enable_search` cannot be enabled together with Function Tools. To keep camera, motion, emotion,
 and dance available, this fork exposes current-web search as a regular `web_search` Tool backed by Streamable HTTP
@@ -194,6 +250,11 @@ The default Exa MCP endpoint supports limited keyless use and may return rate-li
 query is sent to the configured MCP provider; microphone audio, camera images, robot identifiers, and local files
 are not sent. Search output is bounded and treated as untrusted external evidence. Network or rate-limit failures
 return a tool error without stopping the conversation, camera, or robot actions.
+
+This path was verified from a Reachy Mini Wireless deployment using direct TLS without a proxy. For upstream v1,
+use the existing provider-neutral Tool Spaces and the maintained
+[`pollen-robotics/reachy-mini-search-tool`](https://huggingface.co/spaces/pollen-robotics/reachy-mini-search-tool)
+unless you specifically need Exa as a custom MCP provider.
 
 In the headless settings page, select **Qwen Realtime**, then enter:
 
@@ -261,6 +322,7 @@ reachy-mini-qwen-realtime-app --gradio
 | `play_emotion` | Play a recorded emotion clip via Hugging Face datasets. | Core install only. Uses the default open emotions dataset: [`pollen-robotics/reachy-mini-emotions-library`](https://huggingface.co/datasets/pollen-robotics/reachy-mini-emotions-library). |
 | `stop_emotion` | Clear queued emotions. | Core install only. |
 | `do_nothing` | Explicitly remain idle. | Core install only. |
+| `web_search` | Search the current web through Exa Streamable HTTP MCP and return bounded sourced results. | Optional; limited keyless use or `EXA_API_KEY`. |
 
 ## Advanced features
 
@@ -383,6 +445,16 @@ reachy-mini-qwen-realtime-app --robot-name <name>
 `<name>` must match the daemon's `--robot-name` value so the app connects to the correct robot.
 
 </details>
+
+## Upstream coordination
+
+This community release and the upstream contribution have intentionally different scopes:
+
+- [Issue #539](https://github.com/pollen-robotics/reachy_mini_conversation_app/issues/539) proposes the Qwen Omni Realtime provider and records the design discussion.
+- [Draft PR #540](https://github.com/pollen-robotics/reachy_mini_conversation_app/pull/540) ports only the Qwen provider to upstream v1's `ConversationHandler` and generic MCP Tool Space architecture.
+- Exa-specific search remains in this v0.5 community fork because upstream v1 already ships a maintained search MCP Space through [PR #452](https://github.com/pollen-robotics/reachy_mini_conversation_app/pull/452).
+
+Upstream deliberately consolidated around the Hugging Face backend in [PR #444](https://github.com/pollen-robotics/reachy_mini_conversation_app/pull/444), so PR #540 is kept as Draft while maintainers decide whether a direct optional Qwen provider belongs upstream or should remain a community extension.
 
 ## Contributing
 

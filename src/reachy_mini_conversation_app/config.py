@@ -46,6 +46,7 @@ DEFAULT_PROFILES_DIRECTORY = _resolve_default_profiles_directory()
 
 USER_PERSONALITIES_DIRNAME = "user_personalities"
 TERMINAL_USER_PERSONALITIES_DIRECTORY = Path("external_content") / USER_PERSONALITIES_DIRNAME
+LEGACY_PROFILE_INSTRUCTIONS_FILENAME = "instructions.txt"
 
 # Qwen3-TTS CustomVoice speaker catalog from the deployed Hugging Face backend.
 HF_AVAILABLE_VOICES: list[str] = [
@@ -271,7 +272,12 @@ def _collect_profile_names(profiles_root: Path) -> set[str]:
     """Return declarative profile names from a profiles root directory."""
     if not profiles_root.exists() or not profiles_root.is_dir():
         return set()
-    return {path.name for path in profiles_root.iterdir() if path.is_dir() and (path / "profile.md").is_file()}
+    return {
+        path.name
+        for path in profiles_root.iterdir()
+        if path.is_dir()
+        and ((path / "profile.md").is_file() or (path / LEGACY_PROFILE_INSTRUCTIONS_FILENAME).is_file())
+    }
 
 
 def list_tool_module_names(tools_root: Path | None) -> list[str]:
@@ -388,7 +394,9 @@ class Config:
             and self.PROFILES_DIRECTORY != DEFAULT_PROFILES_DIRECTORY
         ):
             selected_profile_path = self.PROFILES_DIRECTORY / self.REACHY_MINI_CUSTOM_PROFILE
-            if not (selected_profile_path / "profile.md").is_file():
+            has_profile_document = (selected_profile_path / "profile.md").is_file()
+            has_legacy_instructions = (selected_profile_path / LEGACY_PROFILE_INSTRUCTIONS_FILENAME).is_file()
+            if not has_profile_document and not has_legacy_instructions:
                 available_profiles = sorted(_collect_profile_names(self.PROFILES_DIRECTORY))
                 raise RuntimeError(
                     "Config.__init__(): Selected profile "

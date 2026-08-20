@@ -68,6 +68,31 @@ def test_legacy_user_profile_is_migrated_and_kept(
     assert core_tools.ALL_TOOLS
 
 
+def test_legacy_external_profile_is_migrated_and_kept(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A selected v0.5 external profile migrates before strict tool loading."""
+    profiles_root = tmp_path / "external_profiles"
+    legacy_profile = profiles_root / "legacy_profile"
+    legacy_profile.mkdir(parents=True)
+    (legacy_profile / "instructions.txt").write_text("legacy external robot", encoding="utf-8")
+    (legacy_profile / "tools.txt").write_text("dance\nweb_search\n", encoding="utf-8")
+
+    _use_profile(monkeypatch, profiles_root, "legacy_profile")
+
+    abandoned = app_lifecycle.initialize_tools_with_default_fallback(None, logging.getLogger(__name__))
+
+    assert abandoned is None, "a migrated external profile must be kept"
+    assert config_mod.config.REACHY_MINI_CUSTOM_PROFILE == "legacy_profile"
+    assert (legacy_profile / "profile.md").is_file()
+
+    from reachy_mini_conversation_app.tools import core_tools
+
+    assert "dance" in core_tools.ALL_TOOLS
+    assert "web_search" in core_tools.ALL_TOOLS
+
+
 def test_malformed_profile_document_falls_back_to_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -65,6 +65,24 @@ def test_config_raises_when_selected_external_profile_is_missing(
         config_mod.Config()
 
 
+def test_config_accepts_selected_legacy_external_profile_for_startup_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A v0.5 external profile may reach the startup migration layer."""
+    external_profiles = tmp_path / "external_profiles"
+    legacy_profile = external_profiles / "legacy_profile"
+    legacy_profile.mkdir(parents=True)
+    (legacy_profile / "instructions.txt").write_text("legacy instructions", encoding="utf-8")
+
+    monkeypatch.setattr(config_mod.Config, "REACHY_MINI_CUSTOM_PROFILE", "legacy_profile")
+    monkeypatch.setattr(config_mod.Config, "PROFILES_DIRECTORY", external_profiles)
+    monkeypatch.setattr(config_mod.Config, "TOOLS_DIRECTORY", None)
+
+    configured = config_mod.Config()
+
+    assert configured.REACHY_MINI_CUSTOM_PROFILE == "legacy_profile"
+
+
 def test_config_allows_packaged_default_with_external_profiles(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -12,7 +12,7 @@ import numpy.typing as npt
 from reachy_mini import ReachyMini
 from reachy_mini.reachy_mini import SLEEP_HEAD_POSE
 from reachy_mini.utils.interpolation import distance_between_poses
-from reachy_mini_conversation_app.config import config, set_custom_profile
+from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config, set_custom_profile
 from reachy_mini_conversation_app.profile_store import DEFAULT_PROFILE_NAME, migrate_legacy_profiles
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies, initialize_tools
 from reachy_mini_conversation_app.tools.go_to_sleep import GoToSleep
@@ -32,12 +32,17 @@ def initialize_tools_with_default_fallback(
 
     Returns the profile that was abandoned, or None when the selection loaded.
     """
-    # User profiles predating profile.md were never migrated on disk; convert
-    # them here so the strict readers below (and the settings UI) see them.
-    try:
-        migrate_legacy_profiles(config.user_personalities_root())
-    except Exception as exc:
-        logger.warning("Legacy profile migration failed: %s", exc)
+    # Profiles predating profile.md were never migrated on disk. Convert both
+    # writable UI profiles and the v0.5 external-profile root before strict
+    # readers build the tool registry.
+    migration_roots = [config.user_personalities_root()]
+    if config.PROFILES_DIRECTORY != DEFAULT_PROFILES_DIRECTORY:
+        migration_roots.append(config.PROFILES_DIRECTORY)
+    for migration_root in dict.fromkeys(migration_roots):
+        try:
+            migrate_legacy_profiles(migration_root)
+        except Exception as exc:
+            logger.warning("Legacy profile migration failed for %s: %s", migration_root, exc)
 
     try:
         initialize_tools(instance_path=instance_path)

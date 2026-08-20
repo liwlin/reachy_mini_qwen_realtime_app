@@ -13,7 +13,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-08-13T04:33:04.464345Z"
+exclude-newer = "2026-08-13T14:24:07.7805668Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -2556,55 +2556,6 @@ wheels = [
 ]
 
 [[package]]
-name = "reachy-mini-conversation-app"
-version = "1.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "mcp" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "reachy-mini" },
-    { name = "reachy-mini-dances-library" },
-    { name = "websockets" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "allure-pytest" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "huggingface-hub", specifier = ">=1.17.0" },
-    { name = "mcp", specifier = ">=1.27.1,<2" },
-    { name = "openai", specifier = "==2.28.0" },
-    { name = "python-dotenv" },
-    { name = "reachy-mini", specifier = ">=1.10.0rc5" },
-    { name = "reachy-mini-dances-library" },
-    { name = "websockets", specifier = ">=15.0.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "allure-pytest", specifier = "==2.16.0" },
-    { name = "mypy", specifier = "==2.2.0" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov", specifier = "==7.1.0" },
-    { name = "ruff", specifier = "==0.15.20" },
-]
-
-[[package]]
 name = "reachy-mini-dances-library"
 version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2666,6 +2617,55 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/03/5b/bc42869c4a4052ed5672e677a488ca3d88d3322535d26dccb4b5d2f01f95/reachy_mini_motor_controller-1.5.6-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:7cea162753609a4b2214fb57d409ad73a3618eb59c7c039ce13a311465546e3f", size = 840320, upload-time = "2026-06-12T09:31:09.372Z" },
     { url = "https://files.pythonhosted.org/packages/b2/f8/59dab3e04fcfca3039829bb73bcb1517c6a54403300e25b3158c9f1678ac/reachy_mini_motor_controller-1.5.6-cp314-cp314-win32.whl", hash = "sha256:9674726d6c9d9e534d4b17ea8f58063a59266bcd1a0cc1eb929a28f7f8996ff2", size = 372198, upload-time = "2026-06-12T09:31:23.253Z" },
     { url = "https://files.pythonhosted.org/packages/0f/d5/0e6d79354aa49ba44df71342a52c1ca8d0b0dd41dbc056e21477126d0c1c/reachy_mini_motor_controller-1.5.6-cp314-cp314-win_amd64.whl", hash = "sha256:468ceeca6970d05758e5cdba1e98a173b39caa09c9979931df311c2fd1f9e92c", size = 394670, upload-time = "2026-06-12T09:31:16.145Z" },
+]
+
+[[package]]
+name = "reachy-mini-qwen-realtime-app"
+version = "1.0.1+qwen.1"
+source = { editable = "." }
+dependencies = [
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "reachy-mini" },
+    { name = "reachy-mini-dances-library" },
+    { name = "websockets" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "allure-pytest" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "huggingface-hub", specifier = ">=1.17.0" },
+    { name = "mcp", specifier = ">=1.27.1,<2" },
+    { name = "openai", specifier = "==2.28.0" },
+    { name = "python-dotenv" },
+    { name = "reachy-mini", specifier = ">=1.10.0rc5" },
+    { name = "reachy-mini-dances-library" },
+    { name = "websockets", specifier = ">=15.0.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "allure-pytest", specifier = "==2.16.0" },
+    { name = "mypy", specifier = "==2.2.0" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+    { name = "ruff", specifier = "==0.15.20" },
 ]
 
 [[package]]

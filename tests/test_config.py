@@ -56,3 +56,17 @@ def test_qwen_backend_rejects_untrusted_full_url(monkeypatch) -> None:
     monkeypatch.setattr(config.config, "QWEN_WORKSPACE_ID", None)
 
     assert config.has_realtime_target() is False
+
+
+def test_legacy_qwen_backend_provider_migrates_when_realtime_backend_is_unset(monkeypatch) -> None:
+    """A v0.5 Qwen configuration remains Qwen after upgrading to v1."""
+    monkeypatch.delenv(config.REALTIME_BACKEND_ENV, raising=False)
+    monkeypatch.setenv("BACKEND_PROVIDER", config.QWEN_BACKEND)
+    monkeypatch.setenv("MODEL_NAME", "qwen3.5-omni-flash-realtime")
+
+    config.refresh_runtime_config_from_env()
+
+    assert config.get_realtime_backend() == config.QWEN_BACKEND
+
+    monkeypatch.setenv(config.REALTIME_BACKEND_ENV, config.HF_BACKEND)
+    config.refresh_runtime_config_from_env()

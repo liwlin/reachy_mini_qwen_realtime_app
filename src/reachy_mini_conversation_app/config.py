@@ -95,12 +95,45 @@ logger = logging.getLogger(__name__)
 _OBSOLETE_BACKEND_ENV_NAMES = ("BACKEND_PROVIDER", "MODEL_NAME")
 
 
+def _legacy_qwen_backend_requested() -> bool:
+    """Return whether a v0.5 environment selected Qwen."""
+    provider = (os.getenv("BACKEND_PROVIDER") or "").strip().lower()
+    model = (os.getenv("MODEL_NAME") or "").strip().lower()
+    return provider == QWEN_BACKEND or model.startswith("qwen")
+
+
+def _realtime_backend_from_env() -> str:
+    """Resolve the v1 backend, migrating the supported v0.5 Qwen selector."""
+    configured = (os.getenv(REALTIME_BACKEND_ENV) or "").strip().lower()
+    if configured:
+        return configured
+    return QWEN_BACKEND if _legacy_qwen_backend_requested() else HF_BACKEND
+
+
+def _qwen_model_from_env() -> str:
+    """Resolve the Qwen model while retaining a v0.5 MODEL_NAME override."""
+    configured = (os.getenv("QWEN_MODEL_NAME") or "").strip()
+    if configured:
+        return configured
+    legacy_model = (os.getenv("MODEL_NAME") or "").strip()
+    if _legacy_qwen_backend_requested() and legacy_model.lower().startswith("qwen"):
+        return legacy_model
+    return "qwen3.5-omni-flash-realtime"
+
+
 def _warn_on_obsolete_backend_env() -> None:
-    """Warn when removed multi-backend selectors are still set; Hugging Face is the only backend."""
+    """Warn when old backend selectors are migrated or ignored."""
     present = [name for name in _OBSOLETE_BACKEND_ENV_NAMES if (os.getenv(name) or "").strip()]
-    if present:
+    if present and _legacy_qwen_backend_requested() and not (os.getenv(REALTIME_BACKEND_ENV) or "").strip():
         logger.warning(
-            "Ignoring obsolete backend environment variable(s): %s. This app now uses the Hugging Face backend only.",
+            "Migrating legacy Qwen backend environment variable(s): %s. Prefer REALTIME_BACKEND=qwen and "
+            "QWEN_MODEL_NAME for future configuration.",
+            ", ".join(present),
+        )
+    elif present:
+        logger.warning(
+            "Ignoring obsolete backend environment variable(s): %s. This app uses the Hugging Face backend only "
+            "unless REALTIME_BACKEND=qwen is selected.",
             ", ".join(present),
         )
 
@@ -322,12 +355,12 @@ class Config:
     HF_REALTIME_WS_URL = os.getenv(HF_REALTIME_WS_URL_ENV)
     REALTIME_TRANSCRIPTION_LANGUAGE = _normalize_transcription_language(os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV))
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
-    REALTIME_BACKEND = (os.getenv(REALTIME_BACKEND_ENV) or HF_BACKEND).strip().lower()
+    REALTIME_BACKEND = _realtime_backend_from_env()
     QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
     QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
     QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
     QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
-    QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "qwen3.5-omni-flash-realtime")
+    QWEN_MODEL_NAME = _qwen_model_from_env()
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -440,12 +473,12 @@ def refresh_runtime_config_from_env() -> None:
         os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV)
     )
     config.HF_TOKEN = os.getenv("HF_TOKEN")
-    config.REALTIME_BACKEND = (os.getenv(REALTIME_BACKEND_ENV) or HF_BACKEND).strip().lower()
+    config.REALTIME_BACKEND = _realtime_backend_from_env()
     config.QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
     config.QWEN_REALTIME_URL = os.getenv("QWEN_REALTIME_URL")
     config.QWEN_WORKSPACE_ID = os.getenv("QWEN_WORKSPACE_ID")
     config.QWEN_REGION = os.getenv("QWEN_REGION", "cn-beijing")
-    config.QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "qwen3.5-omni-flash-realtime")
+    config.QWEN_MODEL_NAME = _qwen_model_from_env()
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 

@@ -13,7 +13,7 @@ default_tools = [
   "remember",
   "forget",
   "head_tracking",
-  "pollen_robotics_reachy_mini_search_tool__search_web",
+  "web_search",
   "pollen_robotics_reachy_mini_weather_tool__get_weather",
   "pollen_robotics_reachy_mini_time_tool__get_time",
 ]

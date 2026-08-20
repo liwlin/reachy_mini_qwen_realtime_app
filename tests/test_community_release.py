@@ -1,0 +1,57 @@
+"""Community release compatibility tests."""
+
+import re
+import tomllib
+import importlib
+import importlib.util
+from pathlib import Path
+
+from reachy_mini import ReachyMiniApp
+from reachy_mini_conversation_app.profile_store import read_packaged_default_profile
+
+
+def test_wireless_entrypoint_source_exposes_discoverable_custom_url() -> None:
+    """Daemon 1.9 can discover the secondary UI from the entry-point package."""
+    package_spec = importlib.util.find_spec("reachy_mini_qwen_realtime_app")
+    assert package_spec is not None
+    spec = importlib.util.find_spec("reachy_mini_qwen_realtime_app.main")
+    assert spec is not None and spec.origin is not None
+
+    source = Path(spec.origin).read_text(encoding="utf-8")
+    match = re.search(r'custom_app_url\s*(?::\s*[^=]+)?\s*=\s*["\']([^"\']+)["\']', source)
+    assert match is not None
+    assert match.group(1) == "http://0.0.0.0:7860/"
+
+
+def test_wireless_entrypoint_loads_qwen_app_class() -> None:
+    """The branded entry point loads a real Reachy Mini application class."""
+    package_spec = importlib.util.find_spec("reachy_mini_qwen_realtime_app")
+    assert package_spec is not None
+    spec = importlib.util.find_spec("reachy_mini_qwen_realtime_app.main")
+    assert spec is not None
+
+    module = importlib.import_module("reachy_mini_qwen_realtime_app.main")
+    app_class = module.ReachyMiniQwenRealtimeApp
+    assert issubclass(app_class, ReachyMiniApp)
+    assert app_class.custom_app_url == "http://0.0.0.0:7860/"
+
+
+def test_community_default_enables_exa_web_search() -> None:
+    """Fresh community installs expose the direct Exa tool by default."""
+    profile = read_packaged_default_profile()
+    assert "web_search" in profile.default_tools
+
+
+def test_community_project_metadata_and_entry_points() -> None:
+    """The release metadata installs the branded CLI and Wireless entry point."""
+    project_root = Path(__file__).parents[1]
+    metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert metadata["project"]["name"] == "reachy_mini_qwen_realtime_app"
+    assert metadata["project"]["version"] == "1.0.1+qwen.1"
+    assert metadata["project"]["scripts"] == {
+        "reachy-mini-qwen-realtime-app": "reachy_mini_conversation_app.main:main"
+    }
+    assert metadata["project"]["entry-points"]["reachy_mini_apps"] == {
+        "reachy_mini_qwen_realtime_app": ("reachy_mini_qwen_realtime_app.main:ReachyMiniQwenRealtimeApp")
+    }

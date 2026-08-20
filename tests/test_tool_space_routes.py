@@ -10,8 +10,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcServer
 from reachy_mini_conversation_app.tool_spaces import (
     InstalledToolSpace,
     InstalledToolSpaceTool,

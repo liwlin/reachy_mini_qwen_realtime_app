@@ -5,8 +5,6 @@ import logging
 from typing import Any, TypeVar
 from collections.abc import Callable, Awaitable, Coroutine
 
-from reachy_mini.io.jsonrpc import JsonRpcError
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini_conversation_app.config import (
     LOCKED_PROFILE,
     config,
@@ -20,6 +18,7 @@ from reachy_mini_conversation_app.personality import (
     save_user_personality,
     available_tool_catalog,
 )
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcError, JsonRpcServer
 from reachy_mini_conversation_app.profile_store import (
     DEFAULT_PROFILE_NAME,
     ProfileFormatError,

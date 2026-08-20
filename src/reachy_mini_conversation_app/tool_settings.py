@@ -7,7 +7,7 @@ from pathlib import Path
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
 
-from reachy_mini.io.jsonrpc import JsonRpcError
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcError
 from reachy_mini_conversation_app.tools.core_tools import initialize_tools
 
 

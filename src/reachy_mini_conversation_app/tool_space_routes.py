@@ -6,8 +6,8 @@ from typing import Any
 from pathlib import Path
 from collections.abc import Callable
 
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini_conversation_app.config import LOCKED_PROFILE, config
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcServer
 from reachy_mini_conversation_app.tool_spaces import (
     ToolSpaceNotInstalledError,
     InstalledToolSpacesManifest,

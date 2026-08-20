@@ -6,9 +6,9 @@ from typing import Any
 from pathlib import Path
 from collections.abc import Callable
 
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 from reachy_mini_conversation_app.config import LOCKED_PROFILE, config
 from reachy_mini_conversation_app.personality import AvailableTool, list_personalities, available_tool_catalog
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcServer
 from reachy_mini_conversation_app.profile_store import (
     DEFAULT_PROFILE_NAME,
     normalize_tool_names,

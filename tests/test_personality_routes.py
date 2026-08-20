@@ -9,9 +9,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from reachy_mini.apps.jsonrpc_server import JsonRpcServer
 import reachy_mini_conversation_app.personality as personality_mod
 from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
+from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcServer
 from reachy_mini_conversation_app.profile_store import (
     write_profile,
     read_profile_from_directory,

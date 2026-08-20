@@ -57,6 +57,7 @@ Version `v1.0.1-qwen.1` keeps upstream v1's `ConversationHandler`, profile store
 - Official Alibaba Cloud endpoint allowlist and explicit proxy bypass for credential-bearing Qwen WebSockets.
 - Wireless-visible `reachy_mini_qwen_realtime_app` package and entry point, so Daemon 1.9 can discover the secondary UI without a manual metadata file.
 - Stable Wireless Daemon 1.9 compatibility: the Daemon intentionally synchronizes the shared Apps venv back to SDK 1.9 at restart, so this build carries its v1 JSON-RPC UI boundary inside the app and supports `reachy-mini>=1.9.0`. Do not disable the Daemon's SDK synchronization or pin the shared venv to a release candidate.
+- Idle Qwen sessions send a serialized minimal `session.update` every 240 seconds. This elicits a server event before the 300-second response-stream timeout; WebSocket ping frames and silent microphone audio alone do not keep that service stream alive.
 - Automatic migration of v0.5 `BACKEND_PROVIDER=qwen` and Qwen `MODEL_NAME` settings when `REALTIME_BACKEND` is absent.
 
 <details>

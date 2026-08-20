@@ -56,6 +56,7 @@ Version `v1.0.1-qwen.1` keeps upstream v1's `ConversationHandler`, profile store
 - Camera, motion, dance, emotion, memory, Exa search, and installed remote MCP tools exposed through one Qwen function schema.
 - Official Alibaba Cloud endpoint allowlist and explicit proxy bypass for credential-bearing Qwen WebSockets.
 - Wireless-visible `reachy_mini_qwen_realtime_app` package and entry point, so Daemon 1.9 can discover the secondary UI without a manual metadata file.
+- Stable Wireless Daemon 1.9 compatibility: the Daemon intentionally synchronizes the shared Apps venv back to SDK 1.9 at restart, so this build carries its v1 JSON-RPC UI boundary inside the app and supports `reachy-mini>=1.9.0`. Do not disable the Daemon's SDK synchronization or pin the shared venv to a release candidate.
 - Automatic migration of v0.5 `BACKEND_PROVIDER=qwen` and Qwen `MODEL_NAME` settings when `REALTIME_BACKEND` is absent.
 
 <details>
@@ -69,6 +70,8 @@ Version `v1.0.1-qwen.1` keeps upstream v1's `ConversationHandler`, profile store
 4. `web_search` 默认使用 Exa MCP，可匿名限量使用；高频使用时配置 `EXA_API_KEY`。
 
 Exa 只接收模型生成的文字查询，不接收麦克风音频、摄像头图片、机器人标识或本地文件。
+
+Wireless 稳定版 Daemon 1.9 在重启时会把共享 Apps 虚拟环境中的 SDK 同步回 1.9.0；这是正常的系统行为。本社区版已在应用内部补齐 v1 二级页面所需的 JSON-RPC 协议，因此无需修改 Daemon、关闭同步或反复安装 1.10 RC SDK。
 
 </details>
 
@@ -85,6 +88,8 @@ The app connects the user, AI services, and robot hardware:
 > [!IMPORTANT]
 > Install [Reachy Mini's SDK](https://github.com/pollen-robotics/reachy_mini/) before using this app.<br>
 > Windows support is currently experimental and has not been extensively tested. Use with caution.
+
+On Reachy Mini Wireless with stable Daemon 1.9, install the release wheel into `/venvs/apps_venv` and leave the Daemon on 1.9.0. The wheel is tested against the synchronized SDK 1.9.0 environment, including app/Daemon restarts; a manual `.app_metadata` file is not required.
 
 <details open>
 <summary>Using uv (recommended)</summary>

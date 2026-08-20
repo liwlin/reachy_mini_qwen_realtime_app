@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import asyncio
 import logging
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from collections.abc import Callable, Awaitable
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -44,7 +44,7 @@ class RpcRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    jsonrpc: str = JSONRPC_VERSION
+    jsonrpc: Literal["2.0"]
     id: RpcId | None = None
     method: str
     params: dict[str, Any] = Field(default_factory=dict)

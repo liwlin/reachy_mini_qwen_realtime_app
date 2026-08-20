@@ -45,3 +45,26 @@ def test_sdk_1_9_compat_preserves_machine_readable_error_reason() -> None:
 
     assert response["id"] == 7
     assert response["error"]["data"]["reason"] == "not_ready"
+
+
+def test_sdk_1_9_compat_rejects_wrong_jsonrpc_version() -> None:
+    """Only JSON-RPC 2.0 frames may reach registered app handlers."""
+    compat = _rpc_module()
+    rpc = compat.JsonRpcServer()
+    app = FastAPI()
+    calls = 0
+
+    @rpc.method("compat.echo")
+    def echo(params: dict[str, object]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        return params
+
+    rpc.mount(app)
+    with TestClient(app).websocket_connect("/rpc") as websocket:
+        websocket.send_json({"jsonrpc": "1.0", "id": 8, "method": "compat.echo", "params": {}})
+        response = websocket.receive_json()
+
+    assert calls == 0
+    assert response["error"]["code"] == -32600
+    assert response["error"]["data"]["reason"] == "invalid_request"

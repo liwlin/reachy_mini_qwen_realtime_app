@@ -188,6 +188,7 @@ def test_backend_config_requests_in_process_restart_with_handler_factory(
 
     app = FastAPI()
     handler = MagicMock()
+    handler._is_connected.return_value = False
     handler.shutdown = AsyncMock()
     robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
     stream = LocalStream(
@@ -372,6 +373,7 @@ def test_status_reports_backend_connection_failure(
 
     app = FastAPI()
     handler = MagicMock()
+    handler._is_connected.return_value = False
     handler.connection = None
     robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
     stream = LocalStream(handler, robot, settings_app=app, instance_path=str(tmp_path))
@@ -398,6 +400,7 @@ def test_backend_startup_failure_is_recorded_without_raising(
 
     app = FastAPI()
     handler = MagicMock()
+    handler._is_connected.return_value = False
     handler.connection = None
     handler.shutdown = AsyncMock()
     media = SimpleNamespace(
@@ -469,6 +472,16 @@ def test_media_warmup_overlaps_audio_startup_config(monkeypatch: pytest.MonkeyPa
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+def test_backend_connected_uses_shared_handler_contract() -> None:
+    """Connection status must work for Qwen's websocket-backed handler shape."""
+    handler = MagicMock()
+    handler._is_connected.return_value = True
+    stream = LocalStream(handler, SimpleNamespace(media=SimpleNamespace(audio=None, backend=None)))
+
+    assert stream._backend_connected() is True
+    handler._is_connected.assert_called_once_with()
+
+
 @pytest.mark.asyncio
 async def test_startup_loop_rebuilds_handler_on_restart_request(monkeypatch: pytest.MonkeyPatch) -> None:
     """LocalStream should shut down and rebuild the handler when a restart is requested."""
@@ -499,6 +512,9 @@ async def test_startup_loop_rebuilds_handler_on_restart_request(monkeypatch: pyt
 
         async def emit(self) -> None:
             return None
+
+        def _is_connected(self) -> bool:
+            return self.connection is not None
 
     handlers: list[FakeHandler] = []
 

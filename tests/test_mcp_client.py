@@ -11,8 +11,23 @@ from reachy_mini_conversation_app.mcp_client import (
     RemoteToolSpec,
     RemoteToolCallResponse,
     validate_http_mcp_url,
+    _trust_environment_for_url,
     build_namespaced_tool_name,
 )
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://127.0.0.1:8765/mcp", False),
+        ("http://localhost:8765/mcp", False),
+        ("http://[::1]:8765/mcp", False),
+        ("https://mcp.exa.ai/mcp", True),
+    ],
+)
+def test_local_mcp_urls_bypass_environment_proxies(url: str, expected: bool) -> None:
+    """Loopback MCP traffic must not be sent to a stale system proxy."""
+    assert _trust_environment_for_url(url) is expected
 
 
 def test_validate_http_mcp_url_rejects_non_http_scheme() -> None:

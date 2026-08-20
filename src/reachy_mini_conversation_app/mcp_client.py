@@ -86,6 +86,12 @@ def validate_http_mcp_url(url: str) -> str:
     return url
 
 
+def _trust_environment_for_url(url: str) -> bool:
+    """Return false for loopback endpoints so stale proxy variables cannot intercept them."""
+    host = (urlparse(url).hostname or "").lower()
+    return host not in _LOCAL_HTTP_HOSTS
+
+
 def build_namespaced_tool_name(server_alias: str, tool_name: str) -> str:
     """Build a local tool name for a remote MCP tool."""
     alias = _require_name_segment("server alias", server_alias)
@@ -360,6 +366,7 @@ class RemoteMcpToolClient:
             headers=self.server.headers,
             follow_redirects=False,
             timeout=client_timeout,
+            trust_env=_trust_environment_for_url(self.server.url),
         ) as http_client:
             async with streamable_http_client(self.server.url, http_client=http_client) as transport:
                 read_stream, write_stream, _ = transport

@@ -259,10 +259,9 @@ class LocalStream:
     def _backend_connected(self) -> bool:
         """Return whether the active handler currently has a realtime connection."""
         try:
-            handler_state = vars(self.handler)
-        except TypeError:
-            handler_state = {}
-        return handler_state.get("connection") is not None
+            return bool(self.handler._is_connected())
+        except Exception:
+            return False
 
     def _can_rebuild_handler(self) -> bool:
         """Return whether LocalStream can construct handlers for backend changes."""

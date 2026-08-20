@@ -36,6 +36,18 @@ def test_wireless_entrypoint_loads_qwen_app_class() -> None:
     assert app_class.custom_app_url == "http://0.0.0.0:7860/"
 
 
+def test_wireless_wrapper_keeps_shared_instance_and_static_directory() -> None:
+    """Branding must not move private config or the secondary UI assets."""
+    module = importlib.import_module("reachy_mini_qwen_realtime_app.main")
+    app = module.ReachyMiniQwenRealtimeApp()
+
+    instance_file = app._get_instance_path()
+
+    assert instance_file.parent.name == "reachy_mini_conversation_app"
+    assert (instance_file.parent / "static" / "index.html").is_file()
+    assert (instance_file.parent / ".env.example").is_file()
+
+
 def test_community_default_enables_exa_web_search() -> None:
     """Fresh community installs expose the direct Exa tool by default."""
     profile = read_packaged_default_profile()

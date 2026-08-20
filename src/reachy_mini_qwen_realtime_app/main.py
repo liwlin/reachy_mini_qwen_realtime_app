@@ -20,3 +20,11 @@ class ReachyMiniQwenRealtimeApp(ReachyMiniConversationApp):
         if shared_main.__file__ is None:
             raise RuntimeError("reachy_mini_conversation_app.main has no filesystem path")
         return Path(shared_main.__file__).resolve()
+
+
+if __name__ == "__main__":
+    app = ReachyMiniQwenRealtimeApp()
+    try:
+        app.wrapped_run()
+    except KeyboardInterrupt:
+        app.stop()

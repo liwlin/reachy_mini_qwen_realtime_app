@@ -1,10 +1,13 @@
 """Community release compatibility tests."""
 
 import re
+import runpy
 import tomllib
 import importlib
 import importlib.util
 from pathlib import Path
+
+import pytest
 
 from reachy_mini import ReachyMiniApp
 from reachy_mini_conversation_app.profile_store import read_packaged_default_profile
@@ -34,6 +37,22 @@ def test_wireless_entrypoint_loads_qwen_app_class() -> None:
     app_class = module.ReachyMiniQwenRealtimeApp
     assert issubclass(app_class, ReachyMiniApp)
     assert app_class.custom_app_url == "http://0.0.0.0:7860/"
+
+
+def test_wireless_module_execution_starts_branded_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Daemon 1.9 executes the entry-point module with ``python -m``."""
+    launched: list[str] = []
+
+    def record_run(app: ReachyMiniApp) -> None:
+        launched.append(type(app).__name__)
+
+    monkeypatch.setattr(ReachyMiniApp, "wrapped_run", record_run)
+    spec = importlib.util.find_spec("reachy_mini_qwen_realtime_app.main")
+    assert spec is not None and spec.origin is not None
+
+    runpy.run_path(spec.origin, run_name="__main__")
+
+    assert launched == ["ReachyMiniQwenRealtimeApp"]
 
 
 def test_wireless_wrapper_keeps_shared_instance_and_static_directory() -> None:

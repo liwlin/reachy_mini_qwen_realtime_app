@@ -101,6 +101,41 @@ def test_qwen_connection_bypasses_system_proxy(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
+async def test_qwen_idle_keepalive_requests_a_server_event_before_stream_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An idle session must elicit a server reply before the 300-second timeout."""
+    handler = _handler()
+    websocket = _FakeWebSocket()
+    handler.websocket = websocket
+    sleeps: list[float] = []
+
+    async def no_wait(delay: float) -> None:
+        sleeps.append(delay)
+
+    original_send = websocket.send
+
+    async def send_once(payload: str) -> None:
+        await original_send(payload)
+        handler.websocket = None
+
+    monkeypatch.setattr("reachy_mini_conversation_app.qwen_realtime.asyncio.sleep", no_wait)
+    websocket.send = send_once  # type: ignore[method-assign]
+
+    await handler._keepalive_loop()
+
+    assert len(sleeps) == 1
+    assert 0 < sleeps[0] < 300
+    assert websocket.sent == [
+        {
+            "event_id": websocket.sent[0]["event_id"],
+            "type": "session.update",
+            "session": {"turn_detection": {"type": "server_vad"}},
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_qwen_audio_and_transcripts_feed_shared_outputs() -> None:
     """Qwen audio and transcripts flow through the shared output contract."""
     handler = _handler()

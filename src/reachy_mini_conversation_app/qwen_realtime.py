@@ -37,6 +37,7 @@ QWEN_INPUT_SAMPLE_RATE: Final[int] = 16000
 QWEN_OUTPUT_SAMPLE_RATE: Final[int] = 24000
 QWEN_MAX_BASE64_IMAGE_BYTES: Final[int] = 256 * 1024
 QWEN_CAMERA_SILENCE_SAMPLES: Final[int] = QWEN_INPUT_SAMPLE_RATE // 10
+QWEN_KEEPALIVE_INTERVAL_SECONDS: Final[float] = 240.0
 
 
 def _openai_tool_specs_to_qwen(specs: list[ToolSpec]) -> list[dict[str, Any]]:
@@ -185,6 +186,30 @@ class QwenRealtimeHandler(ConversationHandler):
             }
         )
 
+    async def _keepalive_loop(self) -> None:
+        """Elicit a server event before Qwen's idle response-stream timeout."""
+        while self.websocket is not None:
+            await asyncio.sleep(QWEN_KEEPALIVE_INTERVAL_SECONDS)
+            if self.websocket is None:
+                return
+            try:
+                async with self._input_buffer_lock:
+                    if self.websocket is None:
+                        return
+                    await self._send_event(
+                        {
+                            "event_id": f"event_{uuid.uuid4().hex}",
+                            "type": "session.update",
+                            "session": {"turn_detection": {"type": "server_vad"}},
+                        }
+                    )
+                logger.debug("Sent Qwen idle keepalive session update")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("Qwen idle keepalive stopped: %s", exc)
+                return
+
     async def _run_realtime_session(self, qwen_api_key: str) -> None:
         """Establish and manage a single Qwen realtime session."""
         url = get_qwen_realtime_url()
@@ -204,6 +229,7 @@ class QwenRealtimeHandler(ConversationHandler):
             )
 
             self.tool_manager.start_up(tool_callbacks=[self._handle_tool_result])
+            keepalive_task = asyncio.create_task(self._keepalive_loop(), name="qwen-idle-keepalive")
             try:
                 async for raw_event in websocket:
                     try:
@@ -216,6 +242,11 @@ class QwenRealtimeHandler(ConversationHandler):
                         continue
                     await self._handle_server_event(event)
             finally:
+                keepalive_task.cancel()
+                try:
+                    await keepalive_task
+                except asyncio.CancelledError:
+                    pass
                 await self.tool_manager.shutdown()
 
     async def _handle_server_event(self, event: dict[str, Any]) -> None:

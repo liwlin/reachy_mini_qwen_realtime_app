@@ -33,3 +33,20 @@ Back up the existing application environment, external profiles, startup
 settings, and rollback wheel before installation. Never overwrite the
 `v1.0.1-qwen.1` release artifact or tag. The retained v0.5 wheel remains the
 rollback target when any mandatory real-device gate fails.
+
+## Verification
+
+- Ruff format/lint, Mypy and 362 tests passed.
+- Wheel privacy and installed-entry-point smoke passed.
+- Release candidate Wheel SHA-256:
+  `9B0389E71DC89A6ADAEE4C005785DF01CFA87D1405298AC568F24D1C80ADF65A`.
+- Reachy Mini Wireless voice, camera, Exa MCP, motion, personality persistence,
+  app stop/start and Daemon restart gates passed with Daemon/Apps SDK 1.9.0.
+- A 2100.2-second final soak produced 19 healthy samples and zero WebSocket
+  1007, response-stream timeout, process exit, traceback, Qwen/VAD/commit or
+  Daemon error.
+
+The test robot has a separate pre-existing motor serial/power warning: several
+reads recovered after one retry while the application and Qwen stayed healthy.
+Inspect the motor power and internal serial connectors independently of this
+application release.

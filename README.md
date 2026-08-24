@@ -63,6 +63,7 @@ Version `v1.0.1-qwen.2` keeps upstream v1's `ConversationHandler`, profile store
 - v0.5 startup personality and the renamed `do_nothing` idle capability survive migration.
 - Transient camera warmup misses are retried, and oversized Wireless JPEGs are fitted to Qwen's image limit through the existing GStreamer stack.
 - The branded `python -m` runner is imported lazily, eliminating duplicate-execution warnings.
+- Qwen's 24 kHz PCM output is resampled to the robot speaker rate, preserving the Tina speed and pitch used by the v0.5 build.
 
 <details>
 <summary>中文快速说明</summary>

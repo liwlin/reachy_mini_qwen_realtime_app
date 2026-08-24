@@ -18,6 +18,9 @@ remain the supported target.
   still enforced.
 - Lazily export the branded Wireless app class so Daemon `python -m` execution
   does not preload and execute the runner module ambiguously.
+- Restore v0.5 playback-rate handling by resampling Qwen's 24 kHz PCM to the
+  Wireless speaker's 16 kHz output rate, preserving Tina's intended speed and
+  pitch.
 
 ## Preserved
 

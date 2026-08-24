@@ -472,6 +472,35 @@ def test_media_warmup_overlaps_audio_startup_config(monkeypatch: pytest.MonkeyPa
         asyncio.set_event_loop(asyncio.new_event_loop())
 
 
+@pytest.mark.asyncio
+async def test_play_loop_resamples_qwen_audio_to_the_wireless_output_rate() -> None:
+    """Qwen's 24 kHz PCM must be converted before the 16 kHz Wireless speaker consumes it."""
+    qwen_audio = np.arange(240, dtype=np.int16).reshape(1, -1)
+    handler = MagicMock()
+    handler.emit = AsyncMock(return_value=(24000, qwen_audio))
+    pushed: list[np.ndarray[Any, Any]] = []
+    media = SimpleNamespace(
+        audio=None,
+        backend=None,
+        get_output_audio_samplerate=MagicMock(return_value=16000),
+        push_audio_sample=MagicMock(),
+    )
+    stream = LocalStream(handler, SimpleNamespace(media=media))
+
+    def push_and_stop(frame: np.ndarray[Any, Any]) -> None:
+        pushed.append(frame.copy())
+        stream._stop_event.set()
+
+    media.push_audio_sample.side_effect = push_and_stop
+
+    await stream.play_loop()
+
+    assert len(pushed) == 1
+    assert pushed[0].dtype == np.float32
+    assert len(pushed[0]) == 160
+    media.get_output_audio_samplerate.assert_called_once_with()
+
+
 def test_backend_connected_uses_shared_handler_contract() -> None:
     """Connection status must work for Qwen's websocket-backed handler shape."""
     handler = MagicMock()

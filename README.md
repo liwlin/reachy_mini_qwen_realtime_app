@@ -49,7 +49,7 @@ Community build of Pollen Robotics' Reachy Mini Conversation App, adding direct 
 
 ## Community release
 
-Version `v1.0.1-qwen.1` keeps upstream v1's `ConversationHandler`, profile store, UI, memory, and generic Tool Space architecture, then adds provider-local Qwen wire handling and a direct Exa search Tool:
+Version `v1.0.1-qwen.2` keeps upstream v1's `ConversationHandler`, profile store, UI, memory, and generic Tool Space architecture, then adds provider-local Qwen wire handling and a direct Exa search Tool. It is a compatibility patch over `v1.0.1-qwen.1` for real Wireless upgrades:
 
 - 16 kHz PCM microphone input and 24 kHz PCM Qwen speech output.
 - Camera frames committed through Qwen's image buffer, serialized against microphone frames, with server VAD restored even after image-send failure.
@@ -59,13 +59,17 @@ Version `v1.0.1-qwen.1` keeps upstream v1's `ConversationHandler`, profile store
 - Stable Wireless Daemon 1.9 compatibility: the Daemon intentionally synchronizes the shared Apps venv back to SDK 1.9 at restart, so this build carries its v1 JSON-RPC UI boundary inside the app and supports `reachy-mini>=1.9.0`. Do not disable the Daemon's SDK synchronization or pin the shared venv to a release candidate.
 - Idle Qwen sessions send a serialized minimal `session.update` every 240 seconds. This elicits a server event before the 300-second response-stream timeout; WebSocket ping frames and silent microphone audio alone do not keep that service stream alive.
 - Automatic migration of v0.5 `BACKEND_PROVIDER=qwen` and Qwen `MODEL_NAME` settings when `REALTIME_BACKEND` is absent.
+- Bounded Qwen close handshakes keep personality reloads inside the UI RPC timeout.
+- v0.5 startup personality and the renamed `do_nothing` idle capability survive migration.
+- Transient camera warmup misses are retried, and oversized Wireless JPEGs are fitted to Qwen's image limit through the existing GStreamer stack.
+- The branded `python -m` runner is imported lazily, eliminating duplicate-execution warnings.
 
 <details>
 <summary>中文快速说明</summary>
 
 本社区版以官方 `v1.0.1` 为基线，直接支持 Qwen Omni Realtime 中文语音、真实摄像头视觉、动作/表情/舞蹈和 Exa MCP 网络搜索。升级自 v0.5 时，原有 Qwen Key、workspace、region、model、外部角色和工具配置可以继续使用。
 
-1. 从 [Releases](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases) 下载 `v1.0.1-qwen.1` wheel。
+1. 从 [Releases](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases) 下载 `v1.0.1-qwen.2` wheel。
 2. 复制 `.env.example` 为 `.env`，配置 `REALTIME_BACKEND=qwen`、`DASHSCOPE_API_KEY` 以及 workspace ID 或完整官方 WebSocket URL。
 3. 启动 `reachy-mini-qwen-realtime-app`；Wireless Control App 会通过 7860 二级页面显示角色、工具和设置。
 4. `web_search` 默认使用 Exa MCP，可匿名限量使用；高频使用时配置 `EXA_API_KEY`。

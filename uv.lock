@@ -13,7 +13,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-08-13T14:24:07.7805668Z"
+exclude-newer = "2026-08-17T03:50:25.9538737Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -2621,7 +2621,7 @@ wheels = [
 
 [[package]]
 name = "reachy-mini-qwen-realtime-app"
-version = "1.0.1+qwen.1"
+version = "1.0.1+qwen.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

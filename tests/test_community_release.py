@@ -5,8 +5,8 @@ import sys
 import runpy
 import tomllib
 import importlib
-import importlib.util
 import subprocess
+import importlib.util
 from pathlib import Path
 
 import pytest

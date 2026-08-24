@@ -98,8 +98,14 @@ def load_startup_settings_into_runtime(instance_path: str | Path | None) -> Star
 
     settings_path = _startup_settings_path(instance_path)
     settings = read_startup_settings(instance_path)
+    inherited_profile = _normalize_optional_text(os.getenv("REACHY_MINI_CUSTOM_PROFILE"))
+    if settings_path is not None and settings_path.exists() and settings.profile is None and inherited_profile:
+        settings = StartupSettings(profile=inherited_profile, voice=settings.voice)
+        write_startup_settings(instance_path, profile=settings.profile, voice=settings.voice)
+        set_custom_profile(settings.profile)
+        return settings
     if settings_path is None or not settings_path.exists():
-        if os.getenv("REACHY_MINI_CUSTOM_PROFILE"):
+        if inherited_profile:
             return StartupSettings(voice=settings.voice)
 
     set_custom_profile(settings.profile)

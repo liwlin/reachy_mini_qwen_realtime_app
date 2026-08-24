@@ -78,3 +78,20 @@ def test_load_startup_settings_into_runtime_preserves_inherited_env_without_save
 
     assert settings == StartupSettings()
     assert applied_profiles == []
+
+
+def test_load_startup_settings_migrates_env_profile_when_only_voice_was_saved(monkeypatch, tmp_path) -> None:
+    """A v0.5 profile env remains the startup choice when its settings file stored only the voice."""
+    write_startup_settings(tmp_path, profile=None, voice="Tina")
+    applied_profiles: list[str | None] = []
+    monkeypatch.setenv("REACHY_MINI_CUSTOM_PROFILE", "seed_fungus")
+    monkeypatch.setattr(
+        "reachy_mini_conversation_app.config.set_custom_profile",
+        lambda profile: applied_profiles.append(profile),
+    )
+
+    settings = load_startup_settings_into_runtime(tmp_path)
+
+    assert settings == StartupSettings(profile="seed_fungus", voice="Tina")
+    assert read_startup_settings(tmp_path) == settings
+    assert applied_profiles == ["seed_fungus"]

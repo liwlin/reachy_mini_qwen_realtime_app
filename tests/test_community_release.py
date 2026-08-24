@@ -1,10 +1,12 @@
 """Community release compatibility tests."""
 
 import re
+import sys
 import runpy
 import tomllib
 import importlib
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -37,6 +39,25 @@ def test_wireless_entrypoint_loads_qwen_app_class() -> None:
     app_class = module.ReachyMiniQwenRealtimeApp
     assert issubclass(app_class, ReachyMiniApp)
     assert app_class.custom_app_url == "http://0.0.0.0:7860/"
+
+
+def test_wireless_package_import_does_not_preload_module_runner() -> None:
+    """Package discovery must not import main before Daemon executes it with python -m."""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys, reachy_mini_qwen_realtime_app; "
+                "assert 'reachy_mini_qwen_realtime_app.main' not in sys.modules"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_wireless_module_execution_starts_branded_app(monkeypatch: pytest.MonkeyPatch) -> None:

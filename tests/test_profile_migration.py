@@ -52,6 +52,16 @@ def test_migration_converts_all_legacy_content(tmp_path: Path) -> None:
     assert (tmp_path / "legacy" / "instructions.txt").is_file()
 
 
+def test_migration_maps_legacy_do_nothing_to_idle_tool(tmp_path: Path) -> None:
+    """A v0.5 do_nothing selection must keep its idle capability after the v1 rename."""
+    _write_legacy(tmp_path / "legacy", tools="camera\ndo_nothing\n")
+
+    assert migrate_legacy_profiles(tmp_path) == ["legacy"]
+
+    profile = read_profile_from_directory("legacy", tmp_path / "legacy")
+    assert profile.default_tools == ("camera", "idle_do_nothing")
+
+
 def test_migration_without_tools_txt_inherits_default_tools(tmp_path: Path) -> None:
     """The shape that broke in the wild: instructions.txt and greeting.txt only."""
     _write_legacy(tmp_path / "famille", greeting="Dis bonjour.")

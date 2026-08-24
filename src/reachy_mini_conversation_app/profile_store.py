@@ -25,6 +25,7 @@ LEGACY_VOICE_FILENAME = "voice.txt"
 LEGACY_GREETING_FILENAME = "greeting.txt"
 _FRONT_MATTER_DELIMITER = "+++"
 _PROFILE_METADATA_FIELDS = {"schema_version", "default_tools", "voice", "greeting", "hidden"}
+_TOOL_NAME_ALIASES = {"do_nothing": "idle_do_nothing"}
 _STORE_LOCK = threading.Lock()
 
 
@@ -57,6 +58,7 @@ def normalize_tool_names(tool_names: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     for tool_name in tool_names:
         candidate = tool_name.strip()
+        candidate = _TOOL_NAME_ALIASES.get(candidate, candidate)
         if not candidate or candidate.startswith("#") or candidate in seen:
             continue
         normalized.append(candidate)

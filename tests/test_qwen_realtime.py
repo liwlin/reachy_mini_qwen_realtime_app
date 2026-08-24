@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from reachy_mini_conversation_app import config as config_mod
+from reachy_mini_conversation_app import qwen_realtime as qwen_realtime_mod
 from reachy_mini_conversation_app.streaming import AdditionalOutputs
 from reachy_mini_conversation_app.qwen_realtime import QwenRealtimeHandler
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
@@ -196,6 +197,53 @@ async def test_camera_result_commits_image_in_manual_mode_then_restores_vad() ->
     assert websocket.sent[0]["session"] == {"turn_detection": None}
     assert websocket.sent[4]["session"] == {"turn_detection": {"type": "server_vad"}}
     assert image_b64 not in json.dumps(websocket.sent[5])
+
+
+def test_oversized_qwen_image_is_reencoded_below_the_api_limit() -> None:
+    """An oversized SDK JPEG is recompressed instead of being rejected outright."""
+    fit_image = getattr(qwen_realtime_mod, "_fit_qwen_image_base64", None)
+    assert fit_image is not None
+    raw_image = b"oversized-jpeg" * 20000
+    original_b64 = base64.b64encode(raw_image).decode("ascii")
+    encoded_inputs: list[bytes] = []
+
+    def reencode(jpeg_bytes: bytes) -> bytes:
+        encoded_inputs.append(jpeg_bytes)
+        return b"small-jpeg"
+
+    fitted_b64 = fit_image(original_b64, reencode=reencode)
+
+    assert encoded_inputs == [raw_image]
+    assert fitted_b64 == base64.b64encode(b"small-jpeg").decode("ascii")
+
+
+@pytest.mark.asyncio
+async def test_camera_result_reencodes_oversized_image_before_append(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The camera turn sends the fitted frame through the normal Qwen manual-VAD flow."""
+    handler = _handler()
+    websocket = _FakeWebSocket()
+    handler.websocket = websocket
+    oversized_b64 = base64.b64encode(b"x" * (256 * 1024)).decode("ascii")
+    fitted_b64 = base64.b64encode(b"small-jpeg").decode("ascii")
+    monkeypatch.setattr(qwen_realtime_mod, "_fit_qwen_image_base64", lambda _image: fitted_b64, raising=False)
+    notification = ToolNotification(
+        id="call_camera",
+        tool_name="camera",
+        is_idle_tool_call=False,
+        status=ToolState.COMPLETED,
+        result={"b64_im": oversized_b64},
+    )
+
+    await handler._handle_tool_result(notification)
+
+    image_events = [event for event in websocket.sent if event["type"] == "input_image_buffer.append"]
+    assert image_events == [
+        {
+            "event_id": image_events[0]["event_id"],
+            "type": "input_image_buffer.append",
+            "image": fitted_b64,
+        }
+    ]
 
 
 @pytest.mark.asyncio

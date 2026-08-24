@@ -5,7 +5,7 @@ import uuid
 import base64
 import asyncio
 import logging
-from typing import Any, Final
+from typing import Any, Final, Callable
 
 import numpy as np
 import websockets
@@ -38,6 +38,61 @@ QWEN_OUTPUT_SAMPLE_RATE: Final[int] = 24000
 QWEN_MAX_BASE64_IMAGE_BYTES: Final[int] = 256 * 1024
 QWEN_CAMERA_SILENCE_SAMPLES: Final[int] = QWEN_INPUT_SAMPLE_RATE // 10
 QWEN_KEEPALIVE_INTERVAL_SECONDS: Final[float] = 240.0
+QWEN_IMAGE_WIDTH: Final[int] = 854
+QWEN_IMAGE_HEIGHT: Final[int] = 480
+QWEN_IMAGE_JPEG_QUALITY: Final[int] = 60
+
+
+def _reencode_qwen_jpeg(jpeg_bytes: bytes) -> bytes:
+    """Re-encode one JPEG through the Reachy SDK's existing GStreamer runtime."""
+    from reachy_mini.media.gstreamer_utils import Gst
+
+    pipeline: Any = Gst.parse_launch(
+        "appsrc name=src format=time ! jpegparse ! jpegdec ! videoconvert ! videoscale ! "
+        f"video/x-raw,width={QWEN_IMAGE_WIDTH},height={QWEN_IMAGE_HEIGHT} ! "
+        f"jpegenc quality={QWEN_IMAGE_JPEG_QUALITY} ! appsink name=sink sync=false"
+    )
+    source: Any = pipeline.get_by_name("src")
+    sink: Any = pipeline.get_by_name("sink")
+    if source is None or sink is None:
+        pipeline.set_state(Gst.State.NULL)
+        raise RuntimeError("Failed to create the Qwen JPEG fitting pipeline")
+
+    try:
+        source.set_property("caps", Gst.Caps.from_string("image/jpeg"))
+        sink.set_property("sync", False)
+        if pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+            raise RuntimeError("Failed to start the Qwen JPEG fitting pipeline")
+        pipeline.get_state(Gst.SECOND * 3)
+        if source.emit("push-buffer", Gst.Buffer.new_wrapped(jpeg_bytes)) != Gst.FlowReturn.OK:
+            raise RuntimeError("Failed to submit the camera JPEG for fitting")
+        source.emit("end-of-stream")
+        sample: Any = sink.emit("try-pull-sample", Gst.SECOND * 5)
+        if sample is None:
+            raise RuntimeError("Timed out fitting the camera JPEG for Qwen")
+        buffer: Any = sample.get_buffer()
+        if buffer is None:
+            raise RuntimeError("Qwen JPEG fitting returned an empty buffer")
+        return bytes(buffer.extract_dup(0, buffer.get_size()))
+    finally:
+        pipeline.set_state(Gst.State.NULL)
+
+
+def _fit_qwen_image_base64(
+    image_b64: str,
+    *,
+    reencode: Callable[[bytes], bytes] = _reencode_qwen_jpeg,
+) -> str:
+    """Return a Qwen-compliant image, recompressing only oversized JPEGs."""
+    if len(image_b64.encode("ascii")) <= QWEN_MAX_BASE64_IMAGE_BYTES:
+        return image_b64
+
+    jpeg_bytes = base64.b64decode(image_b64, validate=True)
+    fitted_b64 = base64.b64encode(reencode(jpeg_bytes)).decode("ascii")
+    if len(fitted_b64.encode("ascii")) > QWEN_MAX_BASE64_IMAGE_BYTES:
+        raise ValueError("Camera frame still exceeds Qwen's 256 KB Base64 image limit after fitting")
+    logger.info("Fitted oversized camera JPEG to %dx%d for Qwen", QWEN_IMAGE_WIDTH, QWEN_IMAGE_HEIGHT)
+    return fitted_b64
 
 
 def _openai_tool_specs_to_qwen(specs: list[ToolSpec]) -> list[dict[str, Any]]:
@@ -355,7 +410,12 @@ class QwenRealtimeHandler(ConversationHandler):
 
         image_b64 = tool_result.pop("b64_im", None)
         if bg_tool.tool_name == "camera" and isinstance(image_b64, str):
-            if len(image_b64.encode("ascii", errors="ignore")) <= QWEN_MAX_BASE64_IMAGE_BYTES:
+            try:
+                image_b64 = await asyncio.to_thread(_fit_qwen_image_base64, image_b64)
+            except (RuntimeError, ValueError) as exc:
+                logger.warning("Could not fit camera frame for Qwen: %s", exc)
+                tool_result["error"] = str(exc)
+            else:
                 async with self._input_buffer_lock:
                     await self._send_event(
                         {
@@ -395,8 +455,6 @@ class QwenRealtimeHandler(ConversationHandler):
                             }
                         )
                 tool_result["image"] = "Camera frame submitted to Qwen."
-            else:
-                tool_result["error"] = "Camera frame exceeds Qwen's 256 KB Base64 image limit."
 
         await self._send_event(
             {

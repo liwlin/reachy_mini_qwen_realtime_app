@@ -42,7 +42,7 @@ rollback target when any mandatory real-device gate fails.
 - Ruff format/lint, Mypy and 362 tests passed.
 - Wheel privacy and installed-entry-point smoke passed.
 - Release candidate Wheel SHA-256:
-  `9B0389E71DC89A6ADAEE4C005785DF01CFA87D1405298AC568F24D1C80ADF65A`.
+  `15E7E2AD25A5AE3D0C99DB16665E713881BAD834DF2E4706201AEDDA61282335`.
 - Reachy Mini Wireless voice, camera, Exa MCP, motion, personality persistence,
   app stop/start and Daemon restart gates passed with Daemon/Apps SDK 1.9.0.
 - A 2100.2-second final soak produced 19 healthy samples and zero WebSocket

@@ -45,6 +45,24 @@ async def test_camera_tool_reports_error_when_no_frame() -> None:
 
 
 @pytest.mark.asyncio
+async def test_camera_tool_retries_a_transient_missing_frame() -> None:
+    """A single cold-pipeline miss must not fail an otherwise available camera turn."""
+    jpeg_bytes = b"\xff\xd8jpeg\xff\xd9"
+    reachy_mini = MagicMock()
+    reachy_mini.media.get_frame_jpeg.side_effect = [None, jpeg_bytes]
+    deps = ToolDependencies(
+        reachy_mini=reachy_mini,
+        movement_manager=MagicMock(),
+        camera_enabled=True,
+    )
+
+    result = await Camera()(deps, question="What is in front of you?")
+
+    assert result["b64_im"] == base64.b64encode(jpeg_bytes).decode("utf-8")
+    assert reachy_mini.media.get_frame_jpeg.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_camera_tool_reports_error_when_camera_disabled() -> None:
     """With the camera disabled the tool returns an error and never reads a frame."""
     reachy_mini = MagicMock()

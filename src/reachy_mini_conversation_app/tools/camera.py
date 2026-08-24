@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -48,7 +49,13 @@ class Camera(Tool):
             logger.error("Camera is disabled")
             return {"error": "Camera is disabled"}
 
-        jpeg_bytes = deps.reachy_mini.media.get_frame_jpeg()
+        jpeg_bytes = None
+        for attempt in range(3):
+            jpeg_bytes = deps.reachy_mini.media.get_frame_jpeg()
+            if jpeg_bytes is not None:
+                break
+            if attempt < 2:
+                await asyncio.sleep(0.1)
         if jpeg_bytes is None:
             logger.error("No frame available from camera")
             return {"error": "No frame available"}

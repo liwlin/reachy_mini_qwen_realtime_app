@@ -100,6 +100,17 @@ def test_qwen_connection_bypasses_system_proxy(monkeypatch: pytest.MonkeyPatch) 
     assert connect.call_args.kwargs["proxy"] is None
 
 
+def test_qwen_connection_bounds_close_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A backend restart must not consume the personality RPC timeout while closing Qwen."""
+    connect = MagicMock(return_value=object())
+    monkeypatch.setattr("reachy_mini_conversation_app.qwen_realtime.websockets.connect", connect)
+
+    result = _handler()._connect("wss://workspace.example", {"Authorization": "Bearer test"})
+
+    assert result is connect.return_value
+    assert connect.call_args.kwargs["close_timeout"] == 2.0
+
+
 @pytest.mark.asyncio
 async def test_qwen_idle_keepalive_requests_a_server_event_before_stream_timeout(
     monkeypatch: pytest.MonkeyPatch,

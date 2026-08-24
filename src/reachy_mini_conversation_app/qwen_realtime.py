@@ -157,6 +157,7 @@ class QwenRealtimeHandler(ConversationHandler):
             additional_headers=headers,
             ping_interval=20,
             ping_timeout=20,
+            close_timeout=2.0,
             proxy=None,
         )
 

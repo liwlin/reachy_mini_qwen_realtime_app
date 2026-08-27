@@ -94,6 +94,25 @@ def test_community_default_enables_exa_web_search() -> None:
     assert "web_search" in profile.default_tools
 
 
+def test_local_control_release_contract() -> None:
+    """The release ships an independent local-control command and mobile assets."""
+    project_root = Path(__file__).parents[1]
+    metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert metadata["project"]["scripts"]["reachy-mini-local-control"] == (
+        "reachy_mini_conversation_app.local_control.main:main"
+    )
+
+    package_spec = importlib.util.find_spec("reachy_mini_conversation_app")
+    assert package_spec is not None and package_spec.origin is not None
+    package_root = Path(package_spec.origin).parent
+    static_root = package_root / "local_control" / "static"
+    assert (static_root / "index.html").is_file()
+    assert (static_root / "setup.html").is_file()
+    assert (static_root / "app.js").is_file()
+    assert (static_root / "style.css").is_file()
+
+
 def test_community_project_metadata_and_entry_points() -> None:
     """The release metadata installs the branded CLI and Wireless entry point."""
     project_root = Path(__file__).parents[1]

@@ -46,6 +46,10 @@ def _logged_in_client() -> tuple[TestClient, AsyncMock, AsyncMock]:
     response = client.post("/api/session", json={"pin": "12345"})
     assert response.status_code == 204
     assert response.cookies.get("reachy_local_session")
+    cookie_header = response.headers["set-cookie"]
+    assert "Path=/api" in cookie_header
+    assert "HttpOnly" in cookie_header
+    assert "SameSite=strict" in cookie_header
     return client, daemon, qwen
 
 

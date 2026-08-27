@@ -101,6 +101,7 @@ def create_local_control_app(
             samesite="strict",
             secure=False,
             max_age=12 * 60 * 60,
+            path="/api",
         )
 
     @app.delete("/api/session", status_code=204)
@@ -111,7 +112,7 @@ def create_local_control_app(
         if not authorizer.is_valid(reachy_local_session):
             raise HTTPException(status_code=401, detail="authentication_required")
         authorizer.revoke(reachy_local_session)
-        response.delete_cookie(SESSION_COOKIE, samesite="strict")
+        response.delete_cookie(SESSION_COOKIE, path="/api", samesite="strict")
 
     @app.get("/api/status")
     async def get_status(_session: str = Depends(require_session)) -> dict[str, object]:

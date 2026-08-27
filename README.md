@@ -501,7 +501,7 @@ After installing the qwen.3 wheel into `/venvs/apps_venv`, copy the packaged ser
 
 ```bash
 mkdir -p ~/.config/systemd/user
-unit=$(/venvs/apps_venv/bin/python -c "from importlib.resources import files; print(files('reachy_mini_conversation_app.local_control').joinpath('systemd/reachy-mini-local-control.service'))")
+unit=$(/venvs/apps_venv/bin/python -c "from importlib.resources import files; print(files('reachy_mini_conversation_app.local_control').joinpath('local.service'))")
 install -m 0644 "$unit" ~/.config/systemd/user/reachy-mini-local-control.service
 systemctl --user daemon-reload
 systemctl --user enable --now reachy-mini-local-control.service

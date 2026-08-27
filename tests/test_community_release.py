@@ -113,7 +113,7 @@ def test_local_control_release_contract() -> None:
     assert (static_root / "style.css").is_file()
     assert (static_root / "makerseed-logo.png").is_file()
 
-    service = package_root / "local_control" / "systemd" / "reachy-mini-local-control.service"
+    service = package_root / "local_control" / "local.service"
     assert service.is_file()
     service_text = service.read_text(encoding="utf-8")
     assert "After=reachy-mini-daemon.service" in service_text

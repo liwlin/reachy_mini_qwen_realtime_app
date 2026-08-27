@@ -45,7 +45,7 @@ def test_setup_page_handles_passwords_without_browser_storage() -> None:
 
     assert 'type="password"' in setup
     assert 'autocomplete="current-password"' in setup
-    assert "passwordInput.value = \"\"" in script
+    assert 'passwordInput.value = ""' in script
     assert not re.search(r"localStorage\.(setItem|getItem)\([^\n]*(password|pin)", script, re.IGNORECASE)
 
 

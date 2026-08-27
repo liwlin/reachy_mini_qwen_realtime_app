@@ -90,4 +90,3 @@ async def test_qwen_client_times_out_without_response() -> None:
         client = QwenRpcClient(f"ws://127.0.0.1:{port}", timeout_s=0.05)
         with pytest.raises(QwenUnavailableError, match="qwen_rpc_timeout"):
             await client.status()
-

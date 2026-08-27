@@ -173,4 +173,3 @@ class DaemonClient:
         if "not found" in message or "no network" in message:
             return {"error": "network_not_found"}
         return {"error": "connection_failed"}
-

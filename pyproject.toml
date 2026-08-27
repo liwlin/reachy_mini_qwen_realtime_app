@@ -64,7 +64,7 @@ where = ["src"]
 reachy_mini_conversation_app = [
   "static/**/*",
   "local_control/static/**/*",
-  "local_control/systemd/*",
+  "local_control/*.service",
   ".env.example",
 ]
 reachy_talk_data = [

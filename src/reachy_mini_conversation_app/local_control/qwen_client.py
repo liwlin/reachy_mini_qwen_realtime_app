@@ -85,7 +85,9 @@ class QwenRpcClient:
             raise QwenRpcError("qwen_rpc_invalid_response")
         actions: list[dict[str, str]] = []
         for item in payload:
-            if not isinstance(item, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in item.items()):
+            if not isinstance(item, dict) or not all(
+                isinstance(key, str) and isinstance(value, str) for key, value in item.items()
+            ):
                 raise QwenRpcError("qwen_rpc_invalid_response")
             actions.append(dict(item))
         return actions
@@ -97,4 +99,3 @@ class QwenRpcClient:
     async def stop_actions(self) -> dict[str, object]:
         """Clear the Qwen movement queue."""
         return self._mapping(await self.call("robot.actions.stop"))
-

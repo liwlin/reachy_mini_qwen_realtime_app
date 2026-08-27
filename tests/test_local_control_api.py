@@ -24,6 +24,8 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     }
     daemon.start_qwen.return_value = {"state": "running", "error": None}
     daemon.restart_qwen.return_value = {"state": "running", "error": None}
+    daemon.wake.return_value = {"uuid": "12345678-1234-5678-1234-567812345678"}
+    daemon.sleep.return_value = {"uuid": "87654321-4321-8765-4321-876543218765"}
     daemon.scan_wifi.return_value = ["EventNet", "Guest"]
     daemon.wifi_error.return_value = {"error": None}
     qwen = AsyncMock()
@@ -98,13 +100,13 @@ def test_platform_safety_routes_work_without_qwen() -> None:
     """Emergency stop, motor mode, wake and sleep call the daemon directly."""
     client, daemon, _qwen = _logged_in_client()
     with client:
-        assert client.post("/api/robot/stop").status_code == 204
         assert client.post("/api/robot/wake").status_code == 204
+        assert client.post("/api/robot/stop").status_code == 204
         assert client.post("/api/robot/sleep").status_code == 204
         assert client.post("/api/motors/enabled").status_code == 204
         assert client.post("/api/motors/turbo").status_code == 422
 
-    daemon.stop_motion.assert_awaited_once_with()
+    daemon.stop_motion.assert_awaited_once_with("12345678-1234-5678-1234-567812345678")
     daemon.wake.assert_awaited_once_with()
     daemon.sleep.assert_awaited_once_with()
     daemon.set_motor_mode.assert_awaited_once_with("enabled")

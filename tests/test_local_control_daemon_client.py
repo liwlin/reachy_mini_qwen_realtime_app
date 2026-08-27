@@ -44,8 +44,15 @@ async def test_daemon_client_uses_only_expected_lifecycle_paths() -> None:
 
     async def handler(request: httpx.Request) -> httpx.Response:
         seen.append((request.method, request.url.path))
+        if request.url.path == "/api/move/running":
+            return httpx.Response(200, json=[{"uuid": "12345678-1234-5678-1234-567812345678"}])
         if request.method == "GET":
             return httpx.Response(200, json={})
+        if request.url.path in {"/api/move/play/wake_up", "/api/move/play/goto_sleep"}:
+            return httpx.Response(200, json={"uuid": "12345678-1234-5678-1234-567812345678"})
+        if request.url.path == "/api/move/stop":
+            assert json.loads(request.content) == {"uuid": "12345678-1234-5678-1234-567812345678"}
+            return httpx.Response(200, json={"status": "stopped"})
         if request.url.path == "/api/apps/restart-current-app":
             return httpx.Response(200, json={"state": "running", "error": None})
         return httpx.Response(204)
@@ -57,7 +64,7 @@ async def test_daemon_client_uses_only_expected_lifecycle_paths() -> None:
         await client.set_motor_mode("enabled")
         await client.wake()
         await client.sleep()
-        await client.stop_motion()
+        await client.stop_motion("12345678-1234-5678-1234-567812345678")
         await client.app_status()
         await client.stop_qwen()
         await client.restart_qwen()
@@ -70,11 +77,31 @@ async def test_daemon_client_uses_only_expected_lifecycle_paths() -> None:
         ("POST", "/api/motors/set_mode/enabled"),
         ("POST", "/api/move/play/wake_up"),
         ("POST", "/api/move/play/goto_sleep"),
+        ("GET", "/api/move/running"),
         ("POST", "/api/move/stop"),
         ("GET", "/api/apps/current-app-status"),
         ("POST", "/api/apps/stop-current-app"),
         ("POST", "/api/apps/restart-current-app"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_daemon_client_does_not_stop_a_completed_platform_move() -> None:
+    """A stale wake/sleep UUID is not forwarded to Daemon's erroring stop route."""
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=[])
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        result = await client.stop_motion("12345678-1234-5678-1234-567812345678")
+    finally:
+        await client.close()
+
+    assert result is None
+    assert [(request.method, request.url.path) for request in requests] == [("GET", "/api/move/running")]
 
 
 @pytest.mark.asyncio

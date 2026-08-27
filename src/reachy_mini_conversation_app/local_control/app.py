@@ -63,6 +63,7 @@ def create_local_control_app(
         await daemon_client.close()
 
     app = FastAPI(title="Reachy Mini Local Control", lifespan=lifespan)
+    active_platform_move_uuid: str | None = None
 
     def require_session(reachy_local_session: str | None = Cookie(default=None)) -> str:
         if reachy_local_session is None or not authorizer.is_valid(reachy_local_session):
@@ -149,19 +150,28 @@ def create_local_control_app(
 
     @app.post("/api/robot/wake", status_code=204)
     async def wake(_session: str = Depends(require_session)) -> None:
-        await daemon_client.wake()
+        nonlocal active_platform_move_uuid
+        result = await daemon_client.wake()
+        move_uuid = result.get("uuid")
+        active_platform_move_uuid = move_uuid if isinstance(move_uuid, str) else None
 
     @app.post("/api/robot/sleep", status_code=204)
     async def sleep(_session: str = Depends(require_session)) -> None:
-        await daemon_client.sleep()
+        nonlocal active_platform_move_uuid
+        result = await daemon_client.sleep()
+        move_uuid = result.get("uuid")
+        active_platform_move_uuid = move_uuid if isinstance(move_uuid, str) else None
 
     @app.post("/api/robot/stop", status_code=204)
     async def stop(_session: str = Depends(require_session)) -> None:
-        await daemon_client.stop_motion()
+        nonlocal active_platform_move_uuid
         try:
             await qwen_client.stop_actions()
         except (QwenUnavailableError, QwenRpcError):
-            return
+            pass
+        if active_platform_move_uuid is not None:
+            move_uuid, active_platform_move_uuid = active_platform_move_uuid, None
+            await daemon_client.stop_motion(move_uuid)
 
     @app.get("/api/actions")
     async def get_actions(_session: str = Depends(require_session)) -> list[dict[str, str]]:

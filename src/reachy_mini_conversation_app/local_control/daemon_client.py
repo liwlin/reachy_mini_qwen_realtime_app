@@ -3,6 +3,7 @@
 import os
 import re
 import base64
+from uuid import UUID
 
 import httpx
 from cryptography.hazmat.primitives import hashes
@@ -105,17 +106,34 @@ class DaemonClient:
             raise ValueError("invalid_motor_mode")
         return await self._request("POST", f"/api/motors/set_mode/{mode}", "motor_mode")
 
-    async def wake(self) -> object | None:
+    async def wake(self) -> dict[str, object]:
         """Run the daemon wake-up motion."""
-        return await self._request("POST", "/api/move/play/wake_up", "wake")
+        return self._mapping(await self._request("POST", "/api/move/play/wake_up", "wake"), "wake")
 
-    async def sleep(self) -> object | None:
+    async def sleep(self) -> dict[str, object]:
         """Run the daemon sleep motion."""
-        return await self._request("POST", "/api/move/play/goto_sleep", "sleep")
+        return self._mapping(await self._request("POST", "/api/move/play/goto_sleep", "sleep"), "sleep")
 
-    async def stop_motion(self) -> object | None:
-        """Stop active daemon motion immediately."""
-        return await self._request("POST", "/api/move/stop", "motion_stop")
+    async def stop_motion(self, move_uuid: str) -> object | None:
+        """Stop one still-running daemon move UUID."""
+        try:
+            normalized_uuid = str(UUID(move_uuid))
+        except ValueError:
+            raise ValueError("invalid_move_uuid") from None
+        running = await self._request("GET", "/api/move/running", "motion_status")
+        if not isinstance(running, list):
+            raise LocalControlError("motion_status_invalid_response")
+        running_uuids = {
+            str(item.get("uuid")) for item in running if isinstance(item, dict) and isinstance(item.get("uuid"), str)
+        }
+        if normalized_uuid not in running_uuids:
+            return None
+        return await self._request(
+            "POST",
+            "/api/move/stop",
+            "motion_stop",
+            json_body={"uuid": normalized_uuid},
+        )
 
     async def app_status(self) -> dict[str, object] | None:
         """Return the current managed application status."""

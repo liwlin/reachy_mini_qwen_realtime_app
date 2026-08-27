@@ -56,3 +56,26 @@ def test_session_authorizer_bounds_active_sessions() -> None:
     assert authorizer.is_valid(first) is False
     assert authorizer.is_valid(second) is True
     assert authorizer.is_valid(third) is True
+
+
+def test_session_authorizer_temporarily_locks_repeated_pin_failures() -> None:
+    """Repeated guesses are throttled without permanently blocking the device PIN."""
+    now = [0.0]
+    authorizer = SessionAuthorizer(
+        "12345",
+        session_ttl_s=60,
+        max_failures=3,
+        failure_window_s=30,
+        lockout_s=20,
+        clock=lambda: now[0],
+    )
+
+    for _ in range(3):
+        with pytest.raises(AuthenticationError, match="invalid_pin"):
+            authorizer.authenticate("99999")
+    with pytest.raises(AuthenticationError, match="temporarily_locked"):
+        authorizer.authenticate("12345")
+
+    now[0] = 21.0
+
+    assert authorizer.is_valid(authorizer.authenticate("12345")) is True

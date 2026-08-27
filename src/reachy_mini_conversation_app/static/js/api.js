@@ -137,6 +137,10 @@ export const deletePersonality = (name) => rpcCall("personalities.delete", { nam
 export const getMicState = () => rpcCall("conversation.mic", {});
 export const setMicMuted = (muted) => rpcCall("conversation.mic", { muted });
 
+export const listRobotActions = () => rpcCall("robot.actions.list");
+export const executeRobotAction = (name) => rpcCall("robot.actions.execute", { name });
+export const stopRobotActions = () => rpcCall("robot.actions.stop");
+
 export const listVoices = () => rpcCall("voices.list");
 export const getCurrentVoice = () => rpcCall("voices.current");
 export const applyVoice = (voice) => rpcCall("voices.apply", { voice });

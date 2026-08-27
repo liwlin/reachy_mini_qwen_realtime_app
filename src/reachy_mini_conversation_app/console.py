@@ -41,6 +41,11 @@ from reachy_mini_conversation_app.config import (
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.streaming import AdditionalOutputs, audio_to_float32
 from reachy_mini_conversation_app.sdk_jsonrpc import JsonRpcError, JsonRpcServer
+from reachy_mini_conversation_app.local_actions import (
+    list_local_actions,
+    stop_local_actions,
+    execute_local_action,
+)
 from reachy_mini_conversation_app.startup_settings import read_startup_settings, write_startup_settings
 from reachy_mini_conversation_app.tools.core_tools import initialize_tools
 from reachy_mini_conversation_app.tool_space_routes import register_tool_space_methods
@@ -613,6 +618,21 @@ class LocalStream:
                 self._mic_muted = bool(params["muted"])
                 logger.info("Microphone %s via /rpc", "muted" if self._mic_muted else "unmuted")
             return {"muted": self._mic_muted}
+
+        @rpc.method("robot.actions.list")
+        def _rpc_actions_list(_params: dict[str, object]) -> list[dict[str, str]]:
+            return list_local_actions()
+
+        @rpc.method("robot.actions.execute")
+        async def _rpc_actions_execute(params: dict[str, object]) -> dict[str, object]:
+            name = params.get("name")
+            if not isinstance(name, str):
+                raise JsonRpcError("action name must be a string", reason="invalid_params", code=-32602)
+            return await execute_local_action(name, self.handler.deps)
+
+        @rpc.method("robot.actions.stop")
+        def _rpc_actions_stop(_params: dict[str, object]) -> dict[str, str]:
+            return stop_local_actions(self.handler.deps)
 
         @rpc.method("backend.config")
         def _rpc_backend_config(params: dict[str, object]) -> dict[str, object]:

@@ -32,6 +32,64 @@ def _rpc_call(app: FastAPI, method: str, params: Any = None) -> dict[str, Any]:
         return ws.receive_json()
 
 
+def test_robot_actions_are_available_over_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The local controller can list and run only the registered phone actions."""
+    app = FastAPI()
+    handler = MagicMock()
+    handler.deps = MagicMock()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(handler, robot, settings_app=app)
+    execute = AsyncMock(return_value={"status": "looking left"})
+    monkeypatch.setattr(console_mod, "execute_local_action", execute)
+    monkeypatch.setattr(
+        console_mod,
+        "list_local_actions",
+        lambda: [{"name": "look_left", "label": "Look left", "category": "head"}],
+    )
+    stream._init_settings_ui_if_needed()
+
+    listed = _rpc_call(app, "robot.actions.list")
+    executed = _rpc_call(app, "robot.actions.execute", {"name": "look_left"})
+
+    assert listed["result"] == [{"name": "look_left", "label": "Look left", "category": "head"}]
+    assert executed["result"] == {"status": "looking left"}
+    execute.assert_awaited_once_with("look_left", handler.deps)
+
+
+def test_robot_actions_reject_invalid_params_over_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed action requests fail before reaching the motion layer."""
+    app = FastAPI()
+    handler = MagicMock()
+    handler.deps = MagicMock()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(handler, robot, settings_app=app)
+    execute = AsyncMock()
+    monkeypatch.setattr(console_mod, "execute_local_action", execute)
+    stream._init_settings_ui_if_needed()
+
+    response = _rpc_call(app, "robot.actions.execute", {"name": 42})
+
+    assert response["error"]["data"]["reason"] == "invalid_params"
+    execute.assert_not_awaited()
+
+
+def test_robot_actions_stop_clears_shared_queue_over_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RPC emergency action stop uses the Qwen movement dependencies."""
+    app = FastAPI()
+    handler = MagicMock()
+    handler.deps = MagicMock()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(handler, robot, settings_app=app)
+    stop = MagicMock(return_value={"status": "stopped"})
+    monkeypatch.setattr(console_mod, "stop_local_actions", stop)
+    stream._init_settings_ui_if_needed()
+
+    response = _rpc_call(app, "robot.actions.stop")
+
+    assert response["result"] == {"status": "stopped"}
+    stop.assert_called_once_with(handler.deps)
+
+
 async def _wait_until(predicate: Any, timeout: float = 1.0) -> None:
     """Wait until a test predicate becomes true."""
     deadline = asyncio.get_running_loop().time() + timeout

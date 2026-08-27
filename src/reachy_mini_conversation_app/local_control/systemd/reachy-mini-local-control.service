@@ -1,0 +1,16 @@
+[Unit]
+Description=Reachy Mini local mobile control
+After=reachy-mini-daemon.service
+Wants=reachy-mini-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/venvs/apps_venv/bin/reachy-mini-local-control --host 0.0.0.0 --port 7861
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

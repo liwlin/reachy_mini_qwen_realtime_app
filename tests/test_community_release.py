@@ -111,6 +111,17 @@ def test_local_control_release_contract() -> None:
     assert (static_root / "setup.html").is_file()
     assert (static_root / "app.js").is_file()
     assert (static_root / "style.css").is_file()
+    assert (static_root / "makerseed-logo.png").is_file()
+
+    service = package_root / "local_control" / "systemd" / "reachy-mini-local-control.service"
+    assert service.is_file()
+    service_text = service.read_text(encoding="utf-8")
+    assert "After=reachy-mini-daemon.service" in service_text
+    assert "ExecStart=/venvs/apps_venv/bin/reachy-mini-local-control" in service_text
+    assert "Restart=always" in service_text
+    assert "WantedBy=default.target" in service_text
+    assert "DASHSCOPE" not in service_text
+    assert "API_KEY" not in service_text
 
 
 def test_community_project_metadata_and_entry_points() -> None:
@@ -119,9 +130,10 @@ def test_community_project_metadata_and_entry_points() -> None:
     metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert metadata["project"]["name"] == "reachy_mini_qwen_realtime_app"
-    assert metadata["project"]["version"] == "1.0.1+qwen.2"
+    assert metadata["project"]["version"] == "1.0.1+qwen.3"
     assert metadata["project"]["scripts"] == {
-        "reachy-mini-qwen-realtime-app": "reachy_mini_conversation_app.main:main"
+        "reachy-mini-qwen-realtime-app": "reachy_mini_conversation_app.main:main",
+        "reachy-mini-local-control": "reachy_mini_conversation_app.local_control.main:main",
     }
     assert metadata["project"]["entry-points"]["reachy_mini_apps"] == {
         "reachy_mini_qwen_realtime_app": ("reachy_mini_qwen_realtime_app.main:ReachyMiniQwenRealtimeApp")

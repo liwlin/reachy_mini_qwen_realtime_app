@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reachy_mini_qwen_realtime_app"
-version = "1.0.1+qwen.2"
+version = "1.0.1+qwen.3"
 authors = [{ name = "Pollen Robotics", email = "contact@pollen-robotics.com" }]
 description = "Qwen Omni Realtime voice, vision, robot tools, and Exa MCP search for Reachy Mini"
 readme = "README.md"
@@ -41,6 +41,7 @@ dev = [
 
 [project.scripts]
 reachy-mini-qwen-realtime-app = "reachy_mini_conversation_app.main:main"
+reachy-mini-local-control = "reachy_mini_conversation_app.local_control.main:main"
 
 [tool.uv]
 exclude-newer = "7 days"
@@ -62,6 +63,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 reachy_mini_conversation_app = [
   "static/**/*",
+  "local_control/static/**/*",
+  "local_control/systemd/*",
   ".env.example",
 ]
 reachy_talk_data = [

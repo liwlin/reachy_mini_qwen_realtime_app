@@ -5,6 +5,16 @@ config:
     htmlLabels: true
 ---
 flowchart TB
+    Phone(["<span style='font-size:16px;font-weight:bold;'>Mobile operator</span><br><span style='font-size:13px;color:#0079c8;'>iPhone Safari / Android Chrome</span>"])
+
+    LocalControl@{ label: "<span style='font-size:16px;font-weight:bold;'>Local Control Gateway</span><br><span style='font-size:12px;color:#ff5a36;'>LAN UI :7861 · PIN · fixed operations</span>" }
+
+    Daemon@{ label: "<span style='font-size:16px;font-weight:bold;'>Daemon 1.9</span><br><span style='font-size:12px;color:#3aaa4a;'>App lifecycle · motors · Wi-Fi</span>" }
+
+    Phone -- same-LAN HTTP --> LocalControl
+    LocalControl -- loopback REST --> Daemon
+    LocalControl -- loopback JSON-RPC --> UI
+
     User(["<span style='font-size:16px;font-weight:bold;'>User</span><br><span style='font-size:13px;color:#01579b;'>Person interacting with system</span>"]) 
       -- audio stream --> 
     UI@{ label: "<span style='font-size:16px;font-weight:bold;'>UI Layer</span><br><span style='font-size:13px;color:#0277bd;'>Web UI / Console</span>" }
@@ -34,9 +44,14 @@ flowchart TB
 
     Motion -- commands --> Robot
 
+    Daemon -- platform safety and lifecycle --> Robot
+
     Handlers -- results --> Backend
 
      User:::userStyle
+     Phone:::mobileStyle
+     LocalControl:::localStyle
+     Daemon:::daemonStyle
      UI:::uiStyle
      Backend:::aiStyle
      Motion:::coreStyle
@@ -44,6 +59,9 @@ flowchart TB
      Handlers:::toolStyle
      Robot:::hardwareStyle
     classDef userStyle fill:#e1f5fe,stroke:#01579b,stroke-width:3px
+    classDef mobileStyle fill:#e7f5fc,stroke:#0079c8,stroke-width:2px
+    classDef localStyle fill:#fff7f2,stroke:#ff5a36,stroke-width:3px
+    classDef daemonStyle fill:#e8f6ea,stroke:#3aaa4a,stroke-width:2px
     classDef uiStyle fill:#b3e5fc,stroke:#0277bd,stroke-width:2px
     classDef aiStyle fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px
     classDef coreStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px

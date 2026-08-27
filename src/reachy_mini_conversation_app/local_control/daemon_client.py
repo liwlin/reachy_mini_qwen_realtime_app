@@ -1,8 +1,15 @@
 """Narrow loopback client for the Reachy Mini Daemon 1.9 API."""
 
+import os
 import re
+import base64
 
 import httpx
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 
 
 DAEMON_BASE_URL = "http://127.0.0.1:8000"
@@ -37,6 +44,7 @@ class DaemonClient:
         self,
         base_url: str = DAEMON_BASE_URL,
         timeout_s: float = 8.0,
+        provisioning_pin: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         """Create a client restricted to the configured loopback daemon."""
@@ -46,6 +54,7 @@ class DaemonClient:
             transport=transport,
             trust_env=False,
         )
+        self._provisioning_pin = provisioning_pin
 
     async def close(self) -> None:
         """Close the underlying HTTP connection pool."""
@@ -57,9 +66,10 @@ class DaemonClient:
         path: str,
         operation: str,
         params: dict[str, str] | None = None,
+        json_body: dict[str, str] | None = None,
     ) -> object | None:
         try:
-            response = await self._client.request(method, path, params=params)
+            response = await self._client.request(method, path, params=params, json=json_body)
         except httpx.TimeoutException:
             raise LocalControlError(f"{operation}_timeout") from None
         except httpx.RequestError:
@@ -145,11 +155,46 @@ class DaemonClient:
         """Ask NetworkManager to join a validated network."""
         normalized_ssid = _validate_ssid(ssid)
         normalized_password = _validate_wifi_password(password)
+        if self._provisioning_pin is None:
+            raise LocalControlError("wifi_provisioning_unavailable")
+        key_payload = self._mapping(
+            await self._request("GET", "/wifi/prov_key", "wifi_provisioning_key"),
+            "wifi_provisioning_key",
+        )
+        kid = key_payload.get("kid")
+        public_key = key_payload.get("pk")
+        if not isinstance(kid, str) or not isinstance(public_key, str):
+            raise LocalControlError("wifi_provisioning_key_invalid_response")
+        try:
+            server_public_key = X25519PublicKey.from_public_bytes(base64.b64decode(public_key, validate=True))
+        except (ValueError, TypeError):
+            raise LocalControlError("wifi_provisioning_key_invalid_response") from None
+        phone_private_key = X25519PrivateKey.generate()
+        phone_public_key = phone_private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        shared = phone_private_key.exchange(server_public_key)
+        key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=self._provisioning_pin.encode("utf-8"),
+            info=b"reachy-mini-wifi-psk-v1",
+        ).derive(shared)
+        nonce = os.urandom(12)
+        ciphertext = AESGCM(key).encrypt(
+            nonce,
+            normalized_password.encode("utf-8"),
+            normalized_ssid.encode("utf-8"),
+        )
         return await self._request(
             "POST",
-            "/wifi/connect",
+            "/wifi/connect_sealed",
             "wifi_connect",
-            params={"ssid": normalized_ssid, "password": normalized_password},
+            json_body={
+                "ssid": normalized_ssid,
+                "kid": kid,
+                "epk": base64.b64encode(phone_public_key).decode("ascii"),
+                "nonce": base64.b64encode(nonce).decode("ascii"),
+                "ct": base64.b64encode(ciphertext).decode("ascii"),
+            },
         )
 
     async def forget_wifi(self, ssid: str) -> object | None:

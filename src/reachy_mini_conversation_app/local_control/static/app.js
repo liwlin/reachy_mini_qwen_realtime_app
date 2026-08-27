@@ -115,9 +115,18 @@ function bindDashboard() {
 }
 
 async function refreshWifiStatus() {
-  const status = await api("/api/wifi/status");
+  const [status, lastError] = await Promise.all([api("/api/wifi/status"), api("/api/wifi/error")]);
   showControls();
   document.querySelector('[data-wifi="connected"]').textContent = status.connected_network || status.mode || "未连接";
+  if (lastError.error) {
+    const copy =
+      lastError.error === "authentication_failed"
+        ? "密码错误，机器人已恢复配网热点"
+        : lastError.error === "network_not_found"
+          ? "没有找到目标网络，机器人已恢复配网热点"
+          : "连接失败，机器人已恢复配网热点";
+    message(document.querySelector("#wifi-message"), copy, "error");
+  }
 }
 
 async function scanNetworks() {

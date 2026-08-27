@@ -21,10 +21,11 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the always-on LAN control gateway."""
     args = _parse_args()
+    pin = get_pin()
     app = create_local_control_app(
-        DaemonClient(),
+        DaemonClient(provisioning_pin=pin),
         QwenRpcClient(),
-        SessionAuthorizer(get_pin()),
+        SessionAuthorizer(pin),
     )
     uvicorn.run(app, host=args.host, port=args.port, access_log=True)
 

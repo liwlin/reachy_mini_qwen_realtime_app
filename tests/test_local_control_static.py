@@ -57,6 +57,8 @@ def test_mobile_script_caps_reconnect_and_documents_both_recovery_hosts() -> Non
     assert "Math.min(reconnectDelay * 2, 10000)" in script
     assert "reachy-mini.local:7861" in setup
     assert "10.42.0.1:7861" in setup
+    assert 'api("/api/wifi/error")' in script
+    assert "密码错误，机器人已恢复配网热点" in script
 
 
 def test_mobile_pages_use_official_makerseed_brand_assets_and_colors() -> None:

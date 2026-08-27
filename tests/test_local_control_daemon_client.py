@@ -1,7 +1,15 @@
 """Loopback daemon client tests for local mobile control."""
 
+import json
+import base64
+
 import httpx
 import pytest
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 
 from reachy_mini_conversation_app.local_control.daemon_client import (
     DaemonClient,
@@ -90,34 +98,64 @@ async def test_daemon_client_rejects_unknown_motor_mode_without_request() -> Non
 
 @pytest.mark.asyncio
 async def test_daemon_client_connects_wifi_without_leaking_password() -> None:
-    """Wi-Fi credentials stay in the loopback request and out of results."""
+    """Wi-Fi credentials are sealed for the daemon and stay out of URLs/results."""
     requests: list[httpx.Request] = []
+    server_private_key = X25519PrivateKey.generate()
+    server_public_key = server_private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.url.path == "/wifi/prov_key":
+            return httpx.Response(
+                200,
+                json={
+                    "kid": "test-key",
+                    "pk": base64.b64encode(server_public_key).decode("ascii"),
+                    "alg": "x25519-hkdf-sha256-aesgcm",
+                },
+            )
+        payload = json.loads(request.content)
+        phone_public_key = X25519PublicKey.from_public_bytes(base64.b64decode(payload["epk"]))
+        shared = server_private_key.exchange(phone_public_key)
+        key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"12345",
+            info=b"reachy-mini-wifi-psk-v1",
+        ).derive(shared)
+        plaintext = AESGCM(key).decrypt(
+            base64.b64decode(payload["nonce"]),
+            base64.b64decode(payload["ct"]),
+            payload["ssid"].encode("utf-8"),
+        )
+        assert plaintext == b"private-passphrase"
         return httpx.Response(204)
 
-    client = DaemonClient(transport=httpx.MockTransport(handler))
+    client = DaemonClient(provisioning_pin="12345", transport=httpx.MockTransport(handler))
     try:
         result = await client.connect_wifi("EventNet", "private-passphrase")
     finally:
         await client.close()
 
     assert result is None
-    assert requests[0].url.path == "/wifi/connect"
-    assert requests[0].url.params["ssid"] == "EventNet"
-    assert requests[0].url.params["password"] == "private-passphrase"
+    assert [request.url.path for request in requests] == ["/wifi/prov_key", "/wifi/connect_sealed"]
+    assert all("private-passphrase" not in str(request.url) for request in requests)
+    assert b"private-passphrase" not in requests[1].content
     assert "private-passphrase" not in repr(result)
 
 
 @pytest.mark.asyncio
 async def test_daemon_client_error_hides_upstream_query_and_secret() -> None:
     """HTTP failures report an operation and status without credential-bearing URLs."""
+    server_private_key = X25519PrivateKey.generate()
+    server_public_key = server_private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/wifi/prov_key":
+            return httpx.Response(200, json={"kid": "test-key", "pk": base64.b64encode(server_public_key).decode()})
         return httpx.Response(400, json={"detail": f"failed {request.url}"})
 
-    client = DaemonClient(transport=httpx.MockTransport(handler))
+    client = DaemonClient(provisioning_pin="12345", transport=httpx.MockTransport(handler))
     try:
         with pytest.raises(LocalControlError) as captured:
             await client.connect_wifi("EventNet", "private-passphrase")
@@ -135,11 +173,16 @@ async def test_daemon_client_validates_wifi_credentials_before_request() -> None
     """Invalid SSIDs and short protected-network passwords never reach NetworkManager."""
     requests: list[httpx.Request] = []
 
+    server_private_key = X25519PrivateKey.generate()
+    server_public_key = server_private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.url.path == "/wifi/prov_key":
+            return httpx.Response(200, json={"kid": "test-key", "pk": base64.b64encode(server_public_key).decode()})
         return httpx.Response(204)
 
-    client = DaemonClient(transport=httpx.MockTransport(handler))
+    client = DaemonClient(provisioning_pin="12345", transport=httpx.MockTransport(handler))
     try:
         with pytest.raises(ValueError, match="invalid_ssid"):
             await client.connect_wifi("bad\nssid", "password")
@@ -149,8 +192,26 @@ async def test_daemon_client_validates_wifi_credentials_before_request() -> None
     finally:
         await client.close()
 
-    assert len(requests) == 1
-    assert requests[0].url.params["ssid"] == "OpenNet"
+    assert [request.url.path for request in requests] == ["/wifi/prov_key", "/wifi/connect_sealed"]
+
+
+@pytest.mark.asyncio
+async def test_daemon_client_requires_pin_for_sealed_wifi_without_request() -> None:
+    """The gateway never falls back to the plaintext query-string endpoint."""
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(204)
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(LocalControlError, match="wifi_provisioning_unavailable"):
+            await client.connect_wifi("EventNet", "private-passphrase")
+    finally:
+        await client.close()
+
+    assert requests == []
 
 
 @pytest.mark.asyncio

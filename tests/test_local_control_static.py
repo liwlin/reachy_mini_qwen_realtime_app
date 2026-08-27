@@ -57,3 +57,23 @@ def test_mobile_script_caps_reconnect_and_documents_both_recovery_hosts() -> Non
     assert "Math.min(reconnectDelay * 2, 10000)" in script
     assert "reachy-mini.local:7861" in setup
     assert "10.42.0.1:7861" in setup
+
+
+def test_mobile_pages_use_official_makerseed_brand_assets_and_colors() -> None:
+    """The local controller reflects the workshop brand without weakening safety colors."""
+    index = _read("index.html")
+    setup = _read("setup.html")
+    css = _read("style.css").lower()
+
+    assert (STATIC_ROOT / "makerseed-logo.png").is_file()
+    assert 'src="/assets/makerseed-logo.png"' in index
+    assert 'src="/assets/makerseed-logo.png"' in setup
+    assert 'alt="种子创客工坊"' in index
+    assert "--brand-orange: #ff5a36" in css
+    assert "--brand-blue: #0079c8" in css
+    assert "--brand-purple: #6144d8" in css
+    assert "--brand-yellow: #ffb020" in css
+    assert "--brand-green: #3aaa4a" in css
+    assert "--brand-ink: #16121f" in css
+    assert "--brand-warm: #fff7f2" in css
+    assert "--danger: #d92d20" in css

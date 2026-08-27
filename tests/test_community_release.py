@@ -119,7 +119,9 @@ def test_local_control_release_contract() -> None:
     assert "After=reachy-mini-daemon.service" in service_text
     assert "ExecStart=/venvs/apps_venv/bin/reachy-mini-local-control" in service_text
     assert "Restart=always" in service_text
-    assert "WantedBy=default.target" in service_text
+    assert "User=pollen" in service_text
+    assert "Group=pollen" in service_text
+    assert "WantedBy=multi-user.target" in service_text
     assert "DASHSCOPE" not in service_text
     assert "API_KEY" not in service_text
 

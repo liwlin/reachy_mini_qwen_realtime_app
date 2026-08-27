@@ -495,17 +495,16 @@ reachy-mini-qwen-realtime-app --robot-name <name>
 
 The qwen.3 wheel adds a second process that is deliberately independent from the conversation app. It runs on the Wireless robot, talks to Daemon 1.9 and Qwen only over loopback, and serves a same-origin phone UI on port 7861. It does not relax Daemon CORS, expose arbitrary REST paths, accept arbitrary joint targets, or proxy arbitrary URLs.
 
-### Install the persistent user service on Wireless
+### Install the persistent system service on Wireless
 
-After installing the qwen.3 wheel into `/venvs/apps_venv`, copy the packaged service unit and enable it for the `pollen` user:
+After installing the qwen.3 wheel into `/venvs/apps_venv`, copy the packaged system unit. Systemd starts it after the Daemon while the controller process itself runs as the unprivileged `pollen` user:
 
 ```bash
-mkdir -p ~/.config/systemd/user
 unit=$(/venvs/apps_venv/bin/python -c "from importlib.resources import files; print(files('reachy_mini_conversation_app.local_control').joinpath('local.service'))")
-install -m 0644 "$unit" ~/.config/systemd/user/reachy-mini-local-control.service
-systemctl --user daemon-reload
-systemctl --user enable --now reachy-mini-local-control.service
-systemctl --user status reachy-mini-local-control.service --no-pager
+sudo install -m 0644 "$unit" /etc/systemd/system/reachy-mini-local-control.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now reachy-mini-local-control.service
+sudo systemctl status reachy-mini-local-control.service --no-pager
 ```
 
 Open one of these addresses from a phone on the same LAN:
@@ -532,9 +531,9 @@ LAN status, Qwen start/stop/restart, motor enable/disable, wake/sleep, allowlist
 ### Disable or roll back
 
 ```bash
-systemctl --user disable --now reachy-mini-local-control.service
-rm ~/.config/systemd/user/reachy-mini-local-control.service
-systemctl --user daemon-reload
+sudo systemctl disable --now reachy-mini-local-control.service
+sudo rm /etc/systemd/system/reachy-mini-local-control.service
+sudo systemctl daemon-reload
 ```
 
 Disabling the companion service does not change Daemon 1.9, Qwen credentials, profiles, startup selection, or motor configuration. To roll back the application, reinstall the previously saved qwen.2 wheel with `--no-deps --force-reinstall`, then restart Daemon and the Qwen app.

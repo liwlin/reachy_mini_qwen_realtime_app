@@ -1,12 +1,14 @@
 """Always-on same-origin API for LAN mobile control."""
 
 from typing import Literal
+from pathlib import Path
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import Cookie, Depends, FastAPI, Response, HTTPException
 from pydantic import Field, BaseModel
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from reachy_mini_conversation_app.local_actions import list_local_actions
 from reachy_mini_conversation_app.local_control.security import (
@@ -34,10 +36,24 @@ class PinPayload(BaseModel):
     pin: str = Field(min_length=1, max_length=32)
 
 
+class WifiConnectPayload(BaseModel):
+    """Wi-Fi credentials used only for one loopback connect request."""
+
+    ssid: str = Field(min_length=1, max_length=32)
+    password: str = Field(max_length=63)
+
+
+class WifiForgetPayload(BaseModel):
+    """Saved network selected for removal."""
+
+    ssid: str = Field(min_length=1, max_length=32)
+
+
 def create_local_control_app(
     daemon_client: DaemonClient,
     qwen_client: QwenRpcClient,
     authorizer: SessionAuthorizer,
+    static_dir: Path | None = None,
 ) -> FastAPI:
     """Create the authenticated local mobile-control API."""
 
@@ -64,6 +80,12 @@ def create_local_control_app(
     @app.exception_handler(QwenRpcError)
     async def handle_qwen_error(_request: object, error: QwenRpcError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"error": str(error)})
+
+    @app.exception_handler(ValueError)
+    async def handle_validation_error(_request: object, error: ValueError) -> JSONResponse:
+        message = str(error)
+        allowed = {"invalid_ssid", "invalid_wifi_password", "invalid_motor_mode"}
+        return JSONResponse(status_code=422, content={"error": message if message in allowed else "invalid_input"})
 
     @app.post("/api/session", status_code=204)
     async def create_session(payload: PinPayload, response: Response) -> None:
@@ -150,5 +172,43 @@ def create_local_control_app(
         if name not in _ACTION_NAMES:
             raise HTTPException(status_code=404, detail="unknown_action")
         return await qwen_client.execute_action(name)
+
+    @app.get("/api/wifi/status")
+    async def get_wifi_status(_session: str = Depends(require_session)) -> dict[str, object]:
+        return await daemon_client.wifi_status()
+
+    @app.post("/api/wifi/scan")
+    async def scan_wifi(_session: str = Depends(require_session)) -> list[str]:
+        return await daemon_client.scan_wifi()
+
+    @app.post("/api/wifi/connect", status_code=202)
+    async def connect_wifi(
+        payload: WifiConnectPayload,
+        _session: str = Depends(require_session),
+    ) -> dict[str, str]:
+        await daemon_client.connect_wifi(payload.ssid, payload.password)
+        return {"status": "connecting"}
+
+    @app.post("/api/wifi/forget", status_code=204)
+    async def forget_wifi(
+        payload: WifiForgetPayload,
+        _session: str = Depends(require_session),
+    ) -> None:
+        await daemon_client.forget_wifi(payload.ssid)
+
+    @app.get("/api/wifi/error")
+    async def get_wifi_error(_session: str = Depends(require_session)) -> dict[str, str | None]:
+        return await daemon_client.wifi_error()
+
+    resolved_static_dir = static_dir or Path(__file__).parent / "static"
+    app.mount("/assets", StaticFiles(directory=resolved_static_dir), name="local-control-assets")
+
+    @app.get("/", include_in_schema=False)
+    async def dashboard() -> FileResponse:
+        return FileResponse(resolved_static_dir / "index.html")
+
+    @app.get("/setup", include_in_schema=False)
+    async def setup() -> FileResponse:
+        return FileResponse(resolved_static_dir / "setup.html")
 
     return app

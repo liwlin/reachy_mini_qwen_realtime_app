@@ -24,6 +24,8 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     }
     daemon.start_qwen.return_value = {"state": "running", "error": None}
     daemon.restart_qwen.return_value = {"state": "running", "error": None}
+    daemon.scan_wifi.return_value = ["EventNet", "Guest"]
+    daemon.wifi_error.return_value = {"error": None}
     qwen = AsyncMock()
     qwen.status.return_value = {
         "backend": "qwen",
@@ -114,3 +116,38 @@ def test_logout_revokes_the_browser_session() -> None:
     with client:
         assert client.delete("/api/session").status_code == 204
         assert client.get("/api/status").status_code == 401
+
+
+def test_wifi_routes_scan_connect_forget_and_report_status() -> None:
+    """The setup page receives a narrow Wi-Fi API without credential echo."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        assert client.get("/api/wifi/status").json()["connected_network"] == "EventNet"
+        assert client.post("/api/wifi/scan").json() == ["EventNet", "Guest"]
+        connected = client.post(
+            "/api/wifi/connect",
+            json={"ssid": "EventNet", "password": "private-passphrase"},
+        )
+        assert connected.status_code == 202
+        assert connected.json() == {"status": "connecting"}
+        assert "private-passphrase" not in connected.text
+        assert client.post("/api/wifi/forget", json={"ssid": "Guest"}).status_code == 204
+        assert client.get("/api/wifi/error").json() == {"error": None}
+
+    daemon.connect_wifi.assert_awaited_once_with("EventNet", "private-passphrase")
+    daemon.forget_wifi.assert_awaited_once_with("Guest")
+
+
+def test_wifi_connect_rejects_control_characters_without_forwarding() -> None:
+    """Malformed SSIDs are rejected before reaching the daemon."""
+    client, daemon, _qwen = _logged_in_client()
+    daemon.connect_wifi.side_effect = ValueError("invalid_ssid")
+    with client:
+        response = client.post(
+            "/api/wifi/connect",
+            json={"ssid": "bad\nssid", "password": "private-passphrase"},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"error": "invalid_ssid"}
+    assert "private-passphrase" not in response.text

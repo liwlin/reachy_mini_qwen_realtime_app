@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>Reachy Mini 本地控制</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body data-page="dashboard">
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Reachy Mini 本地控制</h1>
+          <p id="connection-copy" class="connection-copy">正在连接局域网机器人…</p>
+        </div>
+        <a class="text-link" href="/setup">网络配网</a>
+      </header>
+
+      <section id="login-panel" class="login-panel" aria-labelledby="login-title">
+        <h2 id="login-title">输入机器人 PIN</h2>
+        <p>PIN 用于保护同一局域网中的控制操作。</p>
+        <form id="login-form" class="inline-form">
+          <label for="pin">机器人 PIN</label>
+          <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+          <button class="button button--primary" type="submit">进入控制</button>
+        </form>
+        <p id="login-error" class="message message--error" hidden></p>
+      </section>
+
+      <div id="control-panel" hidden>
+        <section class="status-panel" aria-labelledby="status-title">
+          <div class="section-heading">
+            <h2 id="status-title">运行状态</h2>
+            <button class="button button--quiet button--small" data-action="refresh-status" type="button">刷新</button>
+          </div>
+          <div class="status-grid">
+            <div class="status-item"><span>Daemon</span><strong data-status="daemon">—</strong></div>
+            <div class="status-item"><span>电机</span><strong data-status="motors">—</strong></div>
+            <div class="status-item"><span>Qwen</span><strong data-status="qwen">—</strong></div>
+            <div class="status-item"><span>Wi‑Fi</span><strong data-status="wifi">—</strong></div>
+          </div>
+        </section>
+
+        <section aria-labelledby="qwen-title">
+          <div class="section-heading">
+            <h2 id="qwen-title">Qwen 控制</h2>
+            <a id="advanced-qwen" class="text-link text-link--muted" href="#">高级 Qwen 设置</a>
+          </div>
+          <div class="three-controls">
+            <button class="button button--primary" data-action="qwen-start" type="button">启动 Qwen</button>
+            <button class="button" data-action="qwen-stop" type="button">停止 Qwen</button>
+            <button class="button" data-action="qwen-restart" type="button">重启 Qwen</button>
+          </div>
+        </section>
+
+        <section aria-labelledby="robot-title">
+          <h2 id="robot-title">机器人控制</h2>
+          <div class="four-controls">
+            <button class="button" data-endpoint="/api/robot/wake" type="button">唤醒</button>
+            <button class="button" data-endpoint="/api/robot/sleep" type="button">休眠</button>
+            <button class="button" data-endpoint="/api/motors/enabled" type="button">电机启用</button>
+            <button class="button" data-endpoint="/api/motors/disabled" type="button">电机失能</button>
+          </div>
+        </section>
+
+        <section aria-labelledby="actions-title">
+          <h2 id="actions-title">动作控制</h2>
+          <div class="action-grid">
+            <button class="button button--action" data-robot-action="look_left" type="button">向左看</button>
+            <button class="button button--action" data-robot-action="look_right" type="button">向右看</button>
+            <button class="button button--action" data-robot-action="look_up" type="button">向上看</button>
+            <button class="button button--action" data-robot-action="look_down" type="button">向下看</button>
+            <button class="button button--action" data-robot-action="look_front" type="button">回正</button>
+            <button class="button button--action" data-robot-action="nod_yes" type="button">点头</button>
+            <button class="button button--action" data-robot-action="shake_no" type="button">摇头</button>
+            <button class="button button--action" data-robot-action="welcome" type="button">欢迎</button>
+            <button class="button button--action" data-robot-action="happy" type="button">开心</button>
+            <button class="button button--action" data-robot-action="dance" type="button">跳舞</button>
+          </div>
+        </section>
+
+        <p id="operation-message" class="message" aria-live="polite"></p>
+      </div>
+    </main>
+
+    <footer id="emergency-bar" class="emergency-bar" hidden>
+      <button class="emergency-stop" data-action="emergency-stop" type="button">立即停止</button>
+    </footer>
+  </body>
+</html>

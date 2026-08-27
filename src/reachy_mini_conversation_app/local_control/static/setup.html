@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>Reachy Mini 网络配网</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body data-page="setup">
+    <main class="shell shell--setup">
+      <header class="topbar">
+        <div>
+          <h1>网络配网</h1>
+          <p class="connection-copy">将 Reachy Mini 连接到网络</p>
+        </div>
+        <a class="text-link" href="/">返回本地控制</a>
+      </header>
+
+      <section id="login-panel" class="login-panel" aria-labelledby="login-title">
+        <h2 id="login-title">输入机器人 PIN</h2>
+        <form id="login-form" class="inline-form">
+          <label for="pin">机器人 PIN</label>
+          <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+          <button class="button button--primary" type="submit">进入配网</button>
+        </form>
+        <p id="login-error" class="message message--error" hidden></p>
+      </section>
+
+      <div id="control-panel" hidden>
+        <section class="recovery-status">
+          <strong>当前连接</strong>
+          <span data-wifi="connected">正在读取…</span>
+          <small>配网地址：10.42.0.1:7861</small>
+        </section>
+
+        <section aria-labelledby="scan-title">
+          <div class="section-heading">
+            <h2 id="scan-title">附近网络</h2>
+            <button id="scan-button" class="button button--outlined" type="button">扫描附近网络</button>
+          </div>
+          <div id="network-list" class="network-list" aria-live="polite">
+            <p class="message">点击扫描以查找 Wi‑Fi。</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="connect-title">
+          <h2 id="connect-title">连接新网络</h2>
+          <form id="wifi-form" class="stack-form">
+            <label for="ssid">Wi‑Fi 名称（SSID）</label>
+            <input id="ssid" name="ssid" maxlength="32" autocomplete="off" required>
+            <label for="wifi-password">Wi‑Fi 密码</label>
+            <input id="wifi-password" name="password" type="password" maxlength="63" autocomplete="current-password">
+            <button class="button button--primary" type="submit">连接此网络</button>
+          </form>
+        </section>
+
+        <aside class="handoff-note">
+          连接成功后，请让手机加入相同网络，再访问 <strong>reachy-mini.local:7861</strong>。
+          如果失败，请重新连接机器人热点并打开 <strong>10.42.0.1:7861</strong>。
+        </aside>
+        <p id="wifi-message" class="message" aria-live="polite"></p>
+      </div>
+    </main>
+  </body>
+</html>

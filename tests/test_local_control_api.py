@@ -25,6 +25,26 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     }
     daemon.start_qwen.return_value = {"state": "running", "error": None}
     daemon.restart_qwen.return_value = {"state": "running", "error": None}
+    daemon.list_installed_apps.return_value = [
+        {
+            "name": "coding_lab",
+            "source_kind": "installed",
+            "description": "",
+            "url": None,
+            "extra": {"cardData": {"title": "Coding Lab", "emoji": "🧪"}},
+        },
+        {
+            "name": "reachy_mini_qwen_realtime_app",
+            "source_kind": "installed",
+            "description": "",
+            "url": None,
+            "extra": {
+                "custom_app_url": "http://0.0.0.0:7860/",
+                "cardData": {"title": "Reachy Mini Qwen Realtime", "emoji": "🎤"},
+            },
+        },
+    ]
+    daemon.start_app.return_value = {"state": "starting", "error": None}
     daemon.wake.return_value = {"uuid": "12345678-1234-5678-1234-567812345678"}
     daemon.sleep.return_value = {"uuid": "87654321-4321-8765-4321-876543218765"}
     daemon.scan_wifi.return_value = ["EventNet", "Guest"]
@@ -63,6 +83,7 @@ def test_protected_routes_require_a_valid_session() -> None:
 
     with TestClient(app) as client:
         assert client.get("/api/status").status_code == 401
+        assert client.get("/api/apps").status_code == 401
         assert client.post("/api/qwen/start").status_code == 401
         assert client.post("/api/robot/stop").status_code == 401
 
@@ -101,6 +122,60 @@ def test_qwen_lifecycle_and_action_routes_are_fixed() -> None:
     daemon.stop_qwen.assert_awaited_once_with()
     daemon.restart_qwen.assert_awaited_once_with()
     qwen.execute_action.assert_awaited_once_with("look_left")
+
+
+def test_installed_app_catalog_is_sanitized_for_the_phone() -> None:
+    """The local page sees installed display metadata and active state only."""
+    client, _daemon, _qwen = _logged_in_client()
+    with client:
+        response = client.get("/api/apps")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"name": "coding_lab", "title": "Coding Lab", "emoji": "🧪", "active": False},
+        {
+            "name": "reachy_mini_qwen_realtime_app",
+            "title": "Reachy Mini Qwen Realtime",
+            "emoji": "🎤",
+            "active": True,
+            "custom_ui_port": 7860,
+        },
+    ]
+
+
+def test_installed_app_switch_and_stop_routes_follow_current_state() -> None:
+    """Authenticated phone requests can switch and stop only installed/current apps."""
+    client, daemon, _qwen = _logged_in_client()
+    daemon.app_status.side_effect = [
+        {
+            "state": "running",
+            "error": None,
+            "info": {"name": "reachy_mini_qwen_realtime_app"},
+        },
+        None,
+        {"state": "running", "error": None, "info": {"name": "coding_lab"}},
+        {"state": "running", "error": None, "info": {"name": "coding_lab"}},
+        None,
+    ]
+    with client:
+        switched = client.post("/api/apps/coding_lab/switch")
+        stopped = client.post("/api/apps/coding_lab/stop")
+
+    assert switched.json() == {"active": "coding_lab", "changed": True}
+    assert stopped.json() == {"stopped": "coding_lab"}
+    assert daemon.start_app.await_args_list[0].args == ("coding_lab",)
+    assert daemon.stop_current_app.await_count == 2
+
+
+def test_installed_app_route_rejects_unknown_name_before_lifecycle_call() -> None:
+    """Path injection and uninstalled names cannot reach Daemon lifecycle calls."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        response = client.post("/api/apps/run_shell/switch")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "unknown_app", "rollback_restored": False}
+    daemon.start_app.assert_not_awaited()
 
 
 def test_platform_safety_routes_coordinate_qwen_and_daemon_motion() -> None:

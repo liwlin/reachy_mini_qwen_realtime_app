@@ -15,6 +15,7 @@ from reachy_mini_conversation_app.local_control.security import (
     SessionAuthorizer,
     AuthenticationError,
 )
+from reachy_mini_conversation_app.local_control.app_catalog import AppSwitchError, InstalledAppService
 from reachy_mini_conversation_app.local_control.qwen_client import (
     QwenRpcError,
     QwenRpcClient,
@@ -64,6 +65,7 @@ def create_local_control_app(
         await daemon_client.close()
 
     app = FastAPI(title="Reachy Mini Local Control", lifespan=lifespan)
+    installed_apps = InstalledAppService(daemon_client)
     active_platform_move_uuid: str | None = None
 
     async def suspend_qwen_motion() -> bool:
@@ -102,6 +104,19 @@ def create_local_control_app(
     @app.exception_handler(QwenRpcError)
     async def handle_qwen_error(_request: object, error: QwenRpcError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"error": str(error)})
+
+    @app.exception_handler(AppSwitchError)
+    async def handle_app_switch_error(_request: object, error: AppSwitchError) -> JSONResponse:
+        status_code = {
+            "unknown_app": 404,
+            "not_current_app": 409,
+            "current_stop_failed": 502,
+            "target_start_failed": 502,
+        }.get(error.reason, 409)
+        return JSONResponse(
+            status_code=status_code,
+            content={"error": error.reason, "rollback_restored": error.rollback_restored},
+        )
 
     @app.exception_handler(ValueError)
     async def handle_validation_error(_request: object, error: ValueError) -> JSONResponse:
@@ -150,6 +165,18 @@ def create_local_control_app(
         else:
             qwen = {"backend_connected": False, "backend_error": "not_running"}
         return {"daemon": daemon, "motors": motors, "app": current_app, "wifi": wifi, "qwen": qwen}
+
+    @app.get("/api/apps")
+    async def list_apps(_session: str = Depends(require_session)) -> list[dict[str, object]]:
+        return await installed_apps.list_apps()
+
+    @app.post("/api/apps/{name}/switch")
+    async def switch_app(name: str, _session: str = Depends(require_session)) -> dict[str, object]:
+        return await installed_apps.switch_app(name)
+
+    @app.post("/api/apps/{name}/stop")
+    async def stop_app(name: str, _session: str = Depends(require_session)) -> dict[str, str]:
+        return await installed_apps.stop_app(name)
 
     @app.post("/api/qwen/start")
     async def start_qwen(_session: str = Depends(require_session)) -> dict[str, object]:

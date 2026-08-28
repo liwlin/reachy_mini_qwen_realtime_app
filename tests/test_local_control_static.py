@@ -15,11 +15,15 @@ def test_mobile_pages_are_self_contained_and_touch_friendly() -> None:
     """The controller works on an isolated LAN without external assets."""
     index = _read("index.html")
     setup = _read("setup.html")
+    apps = _read("apps.html")
+    motions = _read("motions.html")
     css = _read("style.css")
-    combined = "\n".join((index, setup, css, _read("app.js")))
+    combined = "\n".join((index, setup, apps, motions, css, _read("app.js")))
 
     assert 'name="viewport"' in index
     assert 'name="viewport"' in setup
+    assert 'name="viewport"' in apps
+    assert 'name="viewport"' in motions
     assert not re.search(r"https?://", combined)
     assert "min-height: 48px" in css
     assert "@media (max-width: 620px)" in css
@@ -36,6 +40,50 @@ def test_mobile_dashboard_keeps_emergency_stop_and_qwen_controls_visible() -> No
     assert 'data-action="emergency-stop"' in index
     assert "立即停止" in index
     assert 'href="/setup"' in index
+    assert 'href="/apps"' in index
+    assert 'href="/motions"' in index
+
+
+def test_installed_app_page_has_confirmed_switch_and_local_ui_controls() -> None:
+    """App switching is explicit and can expose only rewritten local settings links."""
+    apps = _read("apps.html")
+    script = _read("app.js")
+
+    assert 'data-page="apps"' in apps
+    assert 'id="app-list"' in apps
+    assert 'id="app-switch-dialog"' in apps
+    assert "停止当前应用并启动" in apps
+    assert 'api("/api/apps")' in script
+    assert "/switch`" in script
+    assert "custom_ui_port" in script
+
+
+def test_motion_page_is_searchable_grouped_and_keeps_both_stop_levels() -> None:
+    """Large live catalogs remain usable without weakening emergency semantics."""
+    motions = _read("motions.html")
+    script = _read("app.js")
+
+    assert 'data-page="motions"' in motions
+    assert 'id="motion-search"' in motions
+    assert 'data-motion-tab="emotion"' in motions
+    assert 'data-motion-tab="dance"' in motions
+    assert 'data-action="motion-stop"' in motions
+    assert 'data-action="emergency-stop"' in motions
+    assert 'api("/api/motions/catalog")' in script
+    assert 'api("/api/motions/status")' in script
+    assert "/api/robot/emergency-stop" in script
+    assert "未安装此动作库" in script
+
+
+def test_setup_page_lists_saved_networks_before_new_credentials() -> None:
+    """Saved credentials are reused through explicit rows, not copied into the browser."""
+    setup = _read("setup.html")
+    script = _read("app.js")
+
+    assert setup.index('id="saved-network-list"') < setup.index('id="network-list"')
+    assert 'api("/api/wifi/switch"' in script
+    assert "本页面会暂时断开" in script
+    assert "已连接" in script
 
 
 def test_setup_page_handles_passwords_without_browser_storage() -> None:
@@ -65,11 +113,15 @@ def test_mobile_pages_use_official_makerseed_brand_assets_and_colors() -> None:
     """The local controller reflects the workshop brand without weakening safety colors."""
     index = _read("index.html")
     setup = _read("setup.html")
+    apps = _read("apps.html")
+    motions = _read("motions.html")
     css = _read("style.css").lower()
 
     assert (STATIC_ROOT / "makerseed-logo.png").is_file()
     assert 'src="/assets/makerseed-logo.png"' in index
     assert 'src="/assets/makerseed-logo.png"' in setup
+    assert 'src="/assets/makerseed-logo.png"' in apps
+    assert 'src="/assets/makerseed-logo.png"' in motions
     assert 'alt="种子创客工坊"' in index
     assert "--brand-orange: #ff5a36" in css
     assert "--brand-blue: #0079c8" in css

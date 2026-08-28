@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>Reachy Mini 表情与舞蹈</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body data-page="motions">
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand-heading">
+          <img class="brand-logo" src="/assets/makerseed-logo.png" alt="种子创客工坊">
+          <div>
+            <h1>表情与舞蹈</h1>
+            <p class="brand-name">种子创客工坊 · 种子菌</p>
+            <p id="connection-copy" class="connection-copy">正在读取动作目录…</p>
+          </div>
+        </div>
+        <a class="text-link" href="/">返回控制</a>
+      </header>
+
+      <section id="login-panel" class="login-panel" aria-labelledby="login-title">
+        <h2 id="login-title">输入机器人 PIN</h2>
+        <form id="login-form" class="inline-form">
+          <label for="pin">机器人 PIN</label>
+          <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+          <button class="button button--primary" type="submit">进入动作控制</button>
+        </form>
+        <p id="login-error" class="message message--error" hidden></p>
+      </section>
+
+      <div id="control-panel" hidden>
+        <section aria-labelledby="catalog-title">
+          <div class="section-heading">
+            <h2 id="catalog-title">动作目录</h2>
+            <button class="button button--quiet button--small" data-action="refresh-motions" type="button">刷新</button>
+          </div>
+          <label for="motion-search">搜索动作</label>
+          <input id="motion-search" type="search" autocomplete="off" placeholder="输入表情、舞蹈或音乐名称">
+          <div class="tab-list" role="tablist" aria-label="动作类型">
+            <button class="tab-button is-active" data-motion-tab="emotion" type="button" role="tab" aria-selected="true">表情</button>
+            <button class="tab-button" data-motion-tab="dance" type="button" role="tab" aria-selected="false">舞蹈</button>
+          </div>
+          <p id="active-motion" class="active-motion">当前没有动作</p>
+          <div id="motion-list" class="motion-sources" aria-live="polite"></div>
+          <button class="button button--outlined motion-stop" data-action="motion-stop" type="button">停止当前动作</button>
+          <p id="operation-message" class="message" aria-live="polite"></p>
+        </section>
+      </div>
+    </main>
+
+    <footer id="emergency-bar" class="emergency-bar" hidden>
+      <button class="emergency-stop" data-action="emergency-stop" type="button">立即停止并失能电机</button>
+    </footer>
+  </body>
+</html>

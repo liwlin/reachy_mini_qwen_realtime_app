@@ -332,6 +332,14 @@ def create_local_control_app(
     async def dashboard() -> FileResponse:
         return FileResponse(resolved_static_dir / "index.html")
 
+    @app.get("/apps", include_in_schema=False)
+    async def apps_page() -> FileResponse:
+        return FileResponse(resolved_static_dir / "apps.html")
+
+    @app.get("/motions", include_in_schema=False)
+    async def motions_page() -> FileResponse:
+        return FileResponse(resolved_static_dir / "motions.html")
+
     @app.get("/setup", include_in_schema=False)
     async def setup() -> FileResponse:
         return FileResponse(resolved_static_dir / "setup.html")

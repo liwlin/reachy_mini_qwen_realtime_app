@@ -7,7 +7,7 @@ from contextlib import suppress
 from reachy_mini_conversation_app.local_control.catalogs import (
     MOTION_SOURCES,
     MotionSourceDefinition,
-    humanize_move_name,
+    motion_display,
     hf_dataset_cache_path,
 )
 from reachy_mini_conversation_app.local_control.qwen_client import (
@@ -75,7 +75,7 @@ class MotionCoordinator:
             names = [name for name in definition.expected_names if name in discovered_set]
         else:
             names = list(dict.fromkeys(discovered))
-        moves = [{"name": name, "label": humanize_move_name(name)} for name in names]
+        moves = [motion_display(definition.source_id, name) for name in names]
         return {
             "label": definition.label,
             "category": definition.category,

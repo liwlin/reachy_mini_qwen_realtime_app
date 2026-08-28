@@ -257,8 +257,17 @@ function renderMotionCatalog() {
         const button = Object.assign(document.createElement("button"), {
           className: "button motion-button",
           type: "button",
-          textContent: move.label,
         });
+        button.append(
+          Object.assign(document.createElement("span"), {
+            className: "motion-button__emoji",
+            textContent: move.emoji || "🎭",
+          }),
+          Object.assign(document.createElement("span"), {
+            className: "motion-button__label",
+            textContent: move.label,
+          })
+        );
         button.dataset.motionName = move.name;
         button.dataset.motionSource = sourceId;
         button.dataset.available = "true";

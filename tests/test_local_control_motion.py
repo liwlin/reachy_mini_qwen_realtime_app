@@ -25,9 +25,9 @@ async def test_catalog_reports_live_counts_and_does_not_probe_missing_music_cach
 
     async def moves(dataset: str) -> list[str]:
         if dataset.endswith("emotions-library"):
-            return ["happy1", "sad1"]
+            return ["welcoming2", "sad1"]
         if dataset.endswith("dances-library"):
-            return ["dance1"]
+            return ["head_tilt_roll"]
         raise AssertionError("Missing music cache must not reach Daemon")
 
     daemon.list_recorded_moves.side_effect = moves
@@ -42,8 +42,8 @@ async def test_catalog_reports_live_counts_and_does_not_probe_missing_music_cach
             "count": 2,
             "expected_count": None,
             "moves": [
-                {"name": "happy1", "label": "happy 1"},
-                {"name": "sad1", "label": "sad 1"},
+                {"name": "welcoming2", "label": "欢迎 2", "emoji": "👋"},
+                {"name": "sad1", "label": "难过 1", "emoji": "😢"},
             ],
         },
         "pollen_dance": {
@@ -52,7 +52,7 @@ async def test_catalog_reports_live_counts_and_does_not_probe_missing_music_cach
             "available": True,
             "count": 1,
             "expected_count": None,
-            "moves": [{"name": "dance1", "label": "dance 1"}],
+            "moves": [{"name": "head_tilt_roll", "label": "侧头摇摆", "emoji": "🎵"}],
         },
         "music_dance": {
             "label": "音乐舞蹈",

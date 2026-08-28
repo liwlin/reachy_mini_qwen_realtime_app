@@ -73,6 +73,7 @@ def test_motion_page_is_searchable_grouped_and_keeps_both_stop_levels() -> None:
     assert 'api("/api/motions/status")' in script
     assert "/api/robot/emergency-stop" in script
     assert "未安装此动作库" in script
+    assert "motion-button__emoji" in script
 
 
 def test_setup_page_lists_saved_networks_before_new_credentials() -> None:
@@ -131,3 +132,5 @@ def test_mobile_pages_use_official_makerseed_brand_assets_and_colors() -> None:
     assert "--brand-ink: #16121f" in css
     assert "--brand-warm: #fff7f2" in css
     assert "--danger: #d92d20" in css
+    assert "--button-shadow:" in css
+    assert "box-shadow: var(--button-shadow)" in css

@@ -7,6 +7,7 @@ import pytest
 from reachy_mini_conversation_app.local_control.catalogs import (
     MOTION_SOURCES,
     MUSIC_DANCE_NAMES,
+    motion_display,
     humanize_move_name,
     hf_dataset_cache_path,
     sanitize_installed_app,
@@ -102,3 +103,25 @@ def test_hf_dataset_cache_path_matches_hub_layout_and_rejects_traversal(tmp_path
 def test_move_labels_are_readable_without_changing_playback_ids(raw: str, expected: str) -> None:
     """Phone labels normalize separators while playback retains the raw ID."""
     assert humanize_move_name(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "name", "expected"),
+    [
+        ("emotion", "understanding2", {"name": "understanding2", "label": "理解 2", "emoji": "🤝"}),
+        ("emotion", "no_excited1", {"name": "no_excited1", "label": "兴奋地拒绝 1", "emoji": "🙅‍♂️"}),
+        ("pollen_dance", "head_tilt_roll", {"name": "head_tilt_roll", "label": "侧头摇摆", "emoji": "🎵"}),
+        (
+            "music_dance",
+            "michael-jackson-thriller",
+            {"name": "michael-jackson-thriller", "label": "迈克尔·杰克逊《颤栗》", "emoji": "🧟"},
+        ),
+    ],
+)
+def test_motion_display_uses_emoji_and_chinese_without_changing_raw_name(
+    source: str,
+    name: str,
+    expected: dict[str, str],
+) -> None:
+    """The phone gets localized metadata while playback keeps the SDK ID."""
+    assert motion_display(source, name) == expected

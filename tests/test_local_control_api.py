@@ -1,5 +1,7 @@
 """HTTP API tests for the always-on local mobile gateway."""
 
+import time
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
@@ -47,6 +49,11 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     daemon.start_app.return_value = {"state": "starting", "error": None}
     daemon.wake.return_value = {"uuid": "12345678-1234-5678-1234-567812345678"}
     daemon.sleep.return_value = {"uuid": "87654321-4321-8765-4321-876543218765"}
+    daemon.list_recorded_moves.side_effect = lambda dataset: (
+        ["happy1", "sad1"] if dataset.endswith("emotions-library") else ["dance1"]
+    )
+    daemon.play_recorded_move.return_value = {"uuid": "12345678-1234-5678-1234-567812345678"}
+    daemon.stop_all_motions.return_value = []
     daemon.scan_wifi.return_value = ["EventNet", "Guest"]
     daemon.wifi_error.return_value = {"error": None}
     qwen = AsyncMock()
@@ -62,9 +69,9 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     return daemon, qwen
 
 
-def _logged_in_client() -> tuple[TestClient, AsyncMock, AsyncMock]:
+def _logged_in_client(hf_cache_root: Path | None = None) -> tuple[TestClient, AsyncMock, AsyncMock]:
     daemon, qwen = _clients()
-    app = create_local_control_app(daemon, qwen, SessionAuthorizer("12345"))
+    app = create_local_control_app(daemon, qwen, SessionAuthorizer("12345"), hf_cache_root=hf_cache_root)
     client = TestClient(app)
     response = client.post("/api/session", json={"pin": "12345"})
     assert response.status_code == 204
@@ -84,6 +91,7 @@ def test_protected_routes_require_a_valid_session() -> None:
     with TestClient(app) as client:
         assert client.get("/api/status").status_code == 401
         assert client.get("/api/apps").status_code == 401
+        assert client.get("/api/motions/catalog").status_code == 401
         assert client.post("/api/qwen/start").status_code == 401
         assert client.post("/api/robot/stop").status_code == 401
 
@@ -176,6 +184,62 @@ def test_installed_app_route_rejects_unknown_name_before_lifecycle_call() -> Non
     assert response.status_code == 404
     assert response.json() == {"error": "unknown_app", "rollback_restored": False}
     daemon.start_app.assert_not_awaited()
+
+
+def test_motion_catalog_play_status_and_stop_routes(tmp_path: Path) -> None:
+    """The authenticated API exposes live fixed-source moves and serialized playback."""
+    client, daemon, qwen = _logged_in_client(tmp_path)
+    with client:
+        catalog = client.get("/api/motions/catalog")
+        started = client.post("/api/motions/emotion/happy1/play")
+        time.sleep(0.02)
+        status = client.get("/api/motions/status")
+        stopped = client.post("/api/motions/stop")
+
+    assert catalog.status_code == 200
+    assert catalog.json()["emotion"]["count"] == 2
+    assert catalog.json()["music_dance"]["available"] is False
+    assert started.status_code == 202
+    assert started.json()["name"] == "happy1"
+    assert status.json() == {"state": "idle", "source": None, "name": None, "error": None}
+    assert stopped.json()["motors_disabled"] is False
+    daemon.play_recorded_move.assert_awaited_once_with("pollen-robotics/reachy-mini-emotions-library", "happy1")
+    qwen.suspend_motion.assert_awaited_once_with()
+    qwen.resume_motion.assert_awaited_once_with()
+
+
+def test_motion_routes_reject_unknown_move_and_disabled_motors(tmp_path: Path) -> None:
+    """Invalid or sleeping motion requests fail before Daemon playback."""
+    client, daemon, _qwen = _logged_in_client(tmp_path)
+    with client:
+        unknown = client.post("/api/motions/emotion/run_shell/play")
+        daemon.motor_status.return_value = {"mode": "disabled"}
+        sleeping = client.post("/api/motions/emotion/happy1/play")
+
+    assert unknown.status_code == 404
+    assert unknown.json() == {"error": "unknown_move"}
+    assert sleeping.status_code == 409
+    assert sleeping.json() == {"error": "motors_disabled"}
+    daemon.play_recorded_move.assert_not_awaited()
+
+
+def test_emergency_stop_disables_motors_independently(tmp_path: Path) -> None:
+    """The red phone control performs true motor disable, unlike ordinary stop."""
+    client, daemon, qwen = _logged_in_client(tmp_path)
+    with client:
+        response = client.post("/api/robot/emergency-stop")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "qwen_stopped": True,
+        "qwen_suspended": True,
+        "daemon_stopped": True,
+        "motors_disabled": True,
+    }
+    qwen.stop_actions.assert_awaited_once_with()
+    qwen.suspend_motion.assert_awaited_once_with()
+    daemon.stop_all_motions.assert_awaited_once_with()
+    daemon.set_motor_mode.assert_awaited_once_with("disabled")
 
 
 def test_platform_safety_routes_coordinate_qwen_and_daemon_motion() -> None:

@@ -26,6 +26,7 @@ from reachy_mini_conversation_app.local_control.daemon_client import (
     DaemonClient,
     LocalControlError,
 )
+from reachy_mini_conversation_app.local_control.motion_control import MotionCoordinator, MotionControlError
 
 
 SESSION_COOKIE = "reachy_local_session"
@@ -56,6 +57,7 @@ def create_local_control_app(
     qwen_client: QwenRpcClient,
     authorizer: SessionAuthorizer,
     static_dir: Path | None = None,
+    hf_cache_root: Path | None = None,
 ) -> FastAPI:
     """Create the authenticated local mobile-control API."""
 
@@ -66,6 +68,7 @@ def create_local_control_app(
 
     app = FastAPI(title="Reachy Mini Local Control", lifespan=lifespan)
     installed_apps = InstalledAppService(daemon_client)
+    motions = MotionCoordinator(daemon_client, qwen_client, hf_cache_root=hf_cache_root)
     active_platform_move_uuid: str | None = None
 
     async def suspend_qwen_motion() -> bool:
@@ -117,6 +120,17 @@ def create_local_control_app(
             status_code=status_code,
             content={"error": error.reason, "rollback_restored": error.rollback_restored},
         )
+
+    @app.exception_handler(MotionControlError)
+    async def handle_motion_control_error(_request: object, error: MotionControlError) -> JSONResponse:
+        status_code = {
+            "unknown_source": 404,
+            "unknown_move": 404,
+            "motion_source_unavailable": 409,
+            "motion_busy": 409,
+            "motors_disabled": 409,
+        }.get(error.reason, 502)
+        return JSONResponse(status_code=status_code, content={"error": error.reason})
 
     @app.exception_handler(ValueError)
     async def handle_validation_error(_request: object, error: ValueError) -> JSONResponse:
@@ -177,6 +191,30 @@ def create_local_control_app(
     @app.post("/api/apps/{name}/stop")
     async def stop_app(name: str, _session: str = Depends(require_session)) -> dict[str, str]:
         return await installed_apps.stop_app(name)
+
+    @app.get("/api/motions/catalog")
+    async def motion_catalog(_session: str = Depends(require_session)) -> dict[str, dict[str, object]]:
+        return await motions.catalog()
+
+    @app.get("/api/motions/status")
+    async def motion_status(_session: str = Depends(require_session)) -> dict[str, object]:
+        return await motions.status()
+
+    @app.post("/api/motions/{source_id}/{name}/play", status_code=202)
+    async def play_motion(
+        source_id: str,
+        name: str,
+        _session: str = Depends(require_session),
+    ) -> dict[str, object]:
+        return await motions.play(source_id, name)
+
+    @app.post("/api/motions/stop")
+    async def stop_motion(_session: str = Depends(require_session)) -> dict[str, bool]:
+        return await motions.stop(resume_qwen=True)
+
+    @app.post("/api/robot/emergency-stop")
+    async def emergency_stop(_session: str = Depends(require_session)) -> dict[str, bool]:
+        return await motions.emergency_stop()
 
     @app.post("/api/qwen/start")
     async def start_qwen(_session: str = Depends(require_session)) -> dict[str, object]:

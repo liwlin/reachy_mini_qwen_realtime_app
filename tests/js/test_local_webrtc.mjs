@@ -213,7 +213,7 @@ test("uses the local GStreamer listener protocol and renders video only", async 
   await flush();
 
   assert.deepEqual(peer.remoteDescription, { type: "offer", sdp: "robot-offer" });
-  assert.equal(peer.transceivers[0].direction, "inactive");
+  assert.equal(peer.transceivers[0].direction, "recvonly");
   assert.equal(peer.transceivers[1].direction, "recvonly");
   assert.deepEqual(parseSent(socket).at(-1), {
     type: "peer",

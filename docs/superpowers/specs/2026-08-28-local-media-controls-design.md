@@ -17,9 +17,10 @@ The release version is `1.0.1+qwen.5` and the user-facing tag is `v1.0.1-qwen.5`
 
 The browser connects directly to the Daemon's existing GStreamer `webrtcsink` signalling server at
 `ws://<current-host>:8443`. It registers as a listener, lists the `reachymini` producer, starts one
-session, answers the producer's SDP offer, and exchanges ICE candidates. The browser accepts only the
-video transceiver, never calls `getUserMedia`, discards every remote audio track, and closes every data
-channel without sending robot commands.
+session, answers the producer's SDP offer, and exchanges ICE candidates. Daemon 1.9 requires the bundled
+audio m-line to remain `recvonly`; the browser therefore negotiates it but immediately disables and discards
+every remote audio track. It never calls `getUserMedia` and closes every data channel without sending robot
+commands.
 
 Volume operations remain same-origin and PIN-protected. The local gateway exposes a narrow API and
 forwards only the four fixed Daemon 1.9 operations:

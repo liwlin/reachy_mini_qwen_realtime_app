@@ -9,6 +9,8 @@ PIN-protected speaker/microphone volume controls. Reachy Mini Wireless remains o
 - Direct connection to the existing GStreamer `reachymini` producer through local WebRTC signalling on port 8443.
 - Receive-only video: no phone camera/microphone permission, no phone audio playback, no cloud signalling, no STUN,
   and no robot command data-channel traffic.
+- Daemon 1.9's bundled audio m-line remains `recvonly` so GStreamer keeps the WebRTC session alive; the received
+  audio track is disabled and never attached to a phone media element.
 - Explicit connect, disconnect, fullscreen, connection-state, and capped automatic-reconnect controls.
 - Speaker output and microphone input sliders from 0 to 100 with mute/restore and current-value display.
 - Four fixed, authenticated gateway operations that validate values and proxy only Daemon 1.9 volume endpoints.

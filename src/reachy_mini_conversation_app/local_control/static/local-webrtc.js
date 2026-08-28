@@ -148,7 +148,7 @@
       for (const transceiver of peer.getTransceivers()) {
         const kind = transceiver.receiver?.track?.kind;
         try {
-          transceiver.direction = kind === "video" ? "recvonly" : "inactive";
+          transceiver.direction = kind === "video" || kind === "audio" ? "recvonly" : "inactive";
         } catch (_failure) {
           if (kind === "audio" && transceiver.receiver?.track) transceiver.receiver.track.enabled = false;
         }

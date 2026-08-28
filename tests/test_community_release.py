@@ -108,6 +108,8 @@ def test_local_control_release_contract() -> None:
     package_root = Path(package_spec.origin).parent
     static_root = package_root / "local_control" / "static"
     assert (static_root / "index.html").is_file()
+    assert (static_root / "apps.html").is_file()
+    assert (static_root / "motions.html").is_file()
     assert (static_root / "setup.html").is_file()
     assert (static_root / "app.js").is_file()
     assert (static_root / "style.css").is_file()
@@ -132,7 +134,7 @@ def test_community_project_metadata_and_entry_points() -> None:
     metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert metadata["project"]["name"] == "reachy_mini_qwen_realtime_app"
-    assert metadata["project"]["version"] == "1.0.1+qwen.3"
+    assert metadata["project"]["version"] == "1.0.1+qwen.4"
     assert metadata["project"]["scripts"] == {
         "reachy-mini-qwen-realtime-app": "reachy_mini_conversation_app.main:main",
         "reachy-mini-local-control": "reachy_mini_conversation_app.local_control.main:main",

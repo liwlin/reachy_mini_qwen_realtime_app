@@ -368,6 +368,10 @@ def create_local_control_app(
     async def motions_page() -> FileResponse:
         return FileResponse(resolved_static_dir / "motions.html")
 
+    @app.get("/media", include_in_schema=False)
+    async def media_page() -> FileResponse:
+        return FileResponse(resolved_static_dir / "media.html")
+
     @app.get("/setup", include_in_schema=False)
     async def setup() -> FileResponse:
         return FileResponse(resolved_static_dir / "setup.html")

@@ -17,13 +17,15 @@ def test_mobile_pages_are_self_contained_and_touch_friendly() -> None:
     setup = _read("setup.html")
     apps = _read("apps.html")
     motions = _read("motions.html")
+    media = _read("media.html")
     css = _read("style.css")
-    combined = "\n".join((index, setup, apps, motions, css, _read("app.js")))
+    combined = "\n".join((index, setup, apps, motions, media, css, _read("app.js"), _read("local-webrtc.js")))
 
     assert 'name="viewport"' in index
     assert 'name="viewport"' in setup
     assert 'name="viewport"' in apps
     assert 'name="viewport"' in motions
+    assert 'name="viewport"' in media
     assert not re.search(r"https?://", combined)
     assert "min-height: 48px" in css
     assert "@media (max-width: 620px)" in css
@@ -42,6 +44,33 @@ def test_mobile_dashboard_keeps_emergency_stop_and_qwen_controls_visible() -> No
     assert 'href="/setup"' in index
     assert 'href="/apps"' in index
     assert 'href="/motions"' in index
+    assert 'href="/media"' in index
+
+
+def test_media_page_is_silent_permission_free_and_touch_friendly() -> None:
+    """The phone receives video and volume controls without becoming a media source."""
+    media = _read("media.html")
+    script = _read("app.js")
+    webrtc = _read("local-webrtc.js")
+
+    assert 'data-page="media"' in media
+    assert '<video id="camera-video"' in media
+    assert "muted" in media
+    assert "playsinline" in media
+    assert 'data-action="video-connect"' in media
+    assert 'data-action="video-disconnect"' in media
+    assert 'data-action="video-fullscreen"' in media
+    assert 'id="speaker-volume"' in media
+    assert 'id="microphone-volume"' in media
+    assert media.count('type="range"') == 2
+    assert media.count('min="0"') == 2
+    assert media.count('max="100"') == 2
+    assert media.count('step="1"') == 2
+    assert "不会在手机播放机器人麦克风声音" in media
+    assert 'api("/api/media/volume"' in script
+    assert 'api("/api/media/microphone"' in script
+    assert "getUserMedia" not in webrtc
+    assert "AudioContext" not in webrtc
 
 
 def test_installed_app_page_has_confirmed_switch_and_local_ui_controls() -> None:

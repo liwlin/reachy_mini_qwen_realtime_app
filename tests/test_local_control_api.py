@@ -164,6 +164,18 @@ def test_media_volume_routes_reject_invalid_values_before_daemon_calls() -> None
     daemon.set_microphone_volume.assert_not_awaited()
 
 
+def test_media_page_is_served_without_bypassing_api_authentication() -> None:
+    """The public shell can load for PIN entry while its media state remains protected."""
+    daemon, qwen = _clients()
+    app = create_local_control_app(daemon, qwen, SessionAuthorizer("12345"))
+
+    with TestClient(app) as client:
+        page = client.get("/media")
+        assert page.status_code == 200
+        assert 'data-page="media"' in page.text
+        assert client.get("/api/media/volume").status_code == 401
+
+
 def test_status_aggregates_daemon_motor_wifi_and_qwen() -> None:
     """One phone request reports every readiness boundary needed on site."""
     client, _daemon, _qwen = _logged_in_client()

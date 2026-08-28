@@ -11,6 +11,9 @@ let pendingApp = null;
 let motionCatalog = {};
 let motionTab = "emotion";
 let motionStatusTimer = null;
+let localVideo = null;
+let lastSpeakerVolume = 50;
+let lastMicrophoneVolume = 50;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -29,6 +32,7 @@ async function api(path, options = {}) {
 }
 
 function showLogin() {
+  if (page === "media") localVideo?.disconnect();
   loginPanel.hidden = false;
   controlPanel.hidden = true;
   if (emergencyBar) emergencyBar.hidden = true;
@@ -461,10 +465,148 @@ function bindSetup() {
   document.querySelector("#wifi-form")?.addEventListener("submit", connectWifi);
 }
 
+const videoStateCopy = {
+  stopped: "未连接",
+  connecting: "正在连接…",
+  signalling: "正在协商画面…",
+  live: "实时画面已连接",
+  reconnecting: "连接中断，正在重试…",
+  unavailable: "实时画面不可用",
+};
+
+function updateVideoState(state) {
+  const copy = videoStateCopy[state] || "媒体状态未知";
+  const badge = document.querySelector("#video-status-badge");
+  const overlay = document.querySelector("#camera-overlay");
+  const connect = document.querySelector('[data-action="video-connect"]');
+  const disconnect = document.querySelector('[data-action="video-disconnect"]');
+  if (badge) {
+    badge.textContent = state === "live" ? "直播中" : copy;
+    badge.classList.toggle("status-badge--active", state === "live");
+  }
+  if (overlay) {
+    overlay.textContent = copy;
+    overlay.hidden = state === "live";
+  }
+  if (connect) connect.disabled = ["connecting", "signalling", "live", "reconnecting"].includes(state);
+  if (disconnect) disconnect.disabled = state === "stopped";
+  const connectionCopy = document.querySelector("#connection-copy");
+  if (connectionCopy) connectionCopy.textContent = copy;
+}
+
+function connectLocalVideo() {
+  if (!localVideo) {
+    localVideo = new window.ReachyLocalVideo({
+      hostname: location.hostname,
+      video: document.querySelector("#camera-video"),
+      onState: updateVideoState,
+    });
+  }
+  localVideo.connect();
+}
+
+function disconnectLocalVideo() {
+  localVideo?.disconnect();
+}
+
+async function fullscreenVideo() {
+  const stage = document.querySelector("#camera-stage");
+  const video = document.querySelector("#camera-video");
+  try {
+    if (stage?.requestFullscreen) await stage.requestFullscreen();
+    else if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen();
+  } catch (failure) {
+    message(document.querySelector("#operation-message"), `无法进入全屏：${failure.message}`, "error");
+  }
+}
+
+function renderVolume(kind, payload) {
+  const slider = document.querySelector(`#${kind}-volume`);
+  const output = document.querySelector(`#${kind}-volume-value`);
+  const mute = document.querySelector(`[data-action="${kind}-mute"]`);
+  const volume = Number(payload?.volume);
+  if (!slider || !Number.isInteger(volume)) return;
+  slider.value = String(volume);
+  slider.disabled = false;
+  slider.setAttribute("aria-valuetext", `${volume}%`);
+  if (output) output.value = `${volume}%`;
+  if (mute) {
+    mute.disabled = false;
+    mute.textContent = volume === 0 ? "恢复" : "静音";
+  }
+  if (volume > 0) {
+    if (kind === "speaker") lastSpeakerVolume = volume;
+    else lastMicrophoneVolume = volume;
+  }
+}
+
+async function refreshMediaSettings() {
+  try {
+    const [speaker, microphone] = await Promise.all([
+      api("/api/media/volume"),
+      api("/api/media/microphone"),
+    ]);
+    showControls();
+    renderVolume("speaker", speaker);
+    renderVolume("microphone", microphone);
+    if (!localVideo) updateVideoState("stopped");
+  } catch (failure) {
+    if (failure.message !== "authentication_required") {
+      message(document.querySelector("#operation-message"), `读取声音设置失败：${failure.message}`, "error");
+    }
+  }
+}
+
+async function setMediaVolume(kind, volume) {
+  const path = kind === "speaker" ? "/api/media/volume" : "/api/media/microphone";
+  try {
+    const result = await api(path, {
+      method: "POST",
+      body: JSON.stringify({ volume }),
+    });
+    renderVolume(kind, result);
+    const label = kind === "speaker" ? "扬声器" : "麦克风输入";
+    message(document.querySelector("#operation-message"), `${label}已调至 ${result.volume}%`, "success");
+  } catch (failure) {
+    message(document.querySelector("#operation-message"), `声音设置失败：${failure.message}`, "error");
+    await refreshMediaSettings();
+  }
+}
+
+function bindVolume(kind) {
+  const slider = document.querySelector(`#${kind}-volume`);
+  const output = document.querySelector(`#${kind}-volume-value`);
+  slider?.addEventListener("input", () => {
+    const value = Number(slider.value);
+    if (output) output.value = `${value}%`;
+    slider.setAttribute("aria-valuetext", `${value}%`);
+  });
+  slider?.addEventListener("change", () => setMediaVolume(kind, Number(slider.value)));
+  document.querySelector(`[data-action="${kind}-mute"]`)?.addEventListener("click", () => {
+    const current = Number(slider.value);
+    const restore = kind === "speaker" ? lastSpeakerVolume : lastMicrophoneVolume;
+    setMediaVolume(kind, current === 0 ? restore || 50 : 0);
+  });
+}
+
+function bindMedia() {
+  document.querySelector('[data-action="video-connect"]')?.addEventListener("click", connectLocalVideo);
+  document.querySelector('[data-action="video-disconnect"]')?.addEventListener("click", disconnectLocalVideo);
+  document.querySelector('[data-action="video-fullscreen"]')?.addEventListener("click", fullscreenVideo);
+  document.querySelector('[data-action="media-refresh"]')?.addEventListener("click", refreshMediaSettings);
+  document.querySelector('[data-action="emergency-stop"]')?.addEventListener("click", () =>
+    postAction("/api/robot/emergency-stop", "动作已停止，电机已失能")
+  );
+  bindVolume("speaker");
+  bindVolume("microphone");
+  window.addEventListener("pagehide", disconnectLocalVideo);
+}
+
 async function startPage() {
   if (page === "dashboard") await refreshDashboard();
   if (page === "apps") await refreshApps();
   if (page === "motions") await refreshMotions();
+  if (page === "media") await refreshMediaSettings();
   if (page === "setup") {
     try {
       await refreshWifiStatus();
@@ -480,4 +622,5 @@ if (page === "dashboard") bindDashboard();
 if (page === "apps") bindApps();
 if (page === "motions") bindMotions();
 if (page === "setup") bindSetup();
+if (page === "media") bindMedia();
 startPage();

@@ -86,6 +86,94 @@ async def test_daemon_client_uses_only_expected_lifecycle_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_daemon_client_reaches_installed_apps_and_recorded_moves() -> None:
+    """Catalog helpers use only the fixed Daemon app and recorded-move surfaces."""
+    requests: list[httpx.Request] = []
+    app_info = {"name": "coding_lab", "source_kind": "installed", "description": "", "url": None, "extra": {}}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/apps/list-available/installed":
+            return httpx.Response(200, json=[app_info])
+        if request.url.path == "/api/apps/start-app/coding_lab":
+            return httpx.Response(200, json={"state": "starting", "error": None})
+        if request.url.path == "/api/apps/stop-current-app":
+            return httpx.Response(204)
+        if request.url.path.endswith("/recorded-move-datasets/list/pollen-robotics/reachy-mini-emotions-library"):
+            return httpx.Response(200, json=["happy1", "sad1"])
+        if request.url.path.endswith(
+            "/play/recorded-move-dataset/pollen-robotics/reachy-mini-emotions-library/happy1"
+        ):
+            return httpx.Response(200, json={"uuid": "12345678-1234-5678-1234-567812345678"})
+        raise AssertionError(f"Unexpected route: {request.method} {request.url.path}")
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        assert await client.list_installed_apps() == [app_info]
+        assert await client.start_app("coding_lab") == {"state": "starting", "error": None}
+        assert await client.stop_current_app() is None
+        assert await client.list_recorded_moves("pollen-robotics/reachy-mini-emotions-library") == ["happy1", "sad1"]
+        assert await client.play_recorded_move("pollen-robotics/reachy-mini-emotions-library", "happy1") == {
+            "uuid": "12345678-1234-5678-1234-567812345678"
+        }
+    finally:
+        await client.close()
+
+    assert [(request.method, request.url.path) for request in requests] == [
+        ("GET", "/api/apps/list-available/installed"),
+        ("POST", "/api/apps/start-app/coding_lab"),
+        ("POST", "/api/apps/stop-current-app"),
+        ("GET", "/api/move/recorded-move-datasets/list/pollen-robotics/reachy-mini-emotions-library"),
+        (
+            "POST",
+            "/api/move/play/recorded-move-dataset/pollen-robotics/reachy-mini-emotions-library/happy1",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stop_all_motions_stops_every_running_uuid() -> None:
+    """Emergency cleanup discovers every live move instead of trusting one cached UUID."""
+    first = "12345678-1234-5678-1234-567812345678"
+    second = "87654321-4321-8765-4321-876543218765"
+    stopped: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/api/move/running":
+            return httpx.Response(200, json=[{"uuid": first}, {"uuid": second}])
+        if request.method == "POST" and request.url.path == "/api/move/stop":
+            stopped.append(str(json.loads(request.content)["uuid"]))
+            return httpx.Response(200, json={"message": "stopped"})
+        raise AssertionError(f"Unexpected route: {request.method} {request.url.path}")
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        result = await client.stop_all_motions()
+    finally:
+        await client.close()
+
+    assert result == [first, second]
+    assert stopped == [first, second]
+
+
+@pytest.mark.asyncio
+async def test_catalog_helpers_reject_malformed_daemon_payloads() -> None:
+    """Malformed upstream catalogs fail closed before reaching the browser."""
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"unexpected": "mapping"})
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(LocalControlError, match="app_catalog_invalid_response"):
+            await client.list_installed_apps()
+        with pytest.raises(LocalControlError, match="recorded_moves_invalid_response"):
+            await client.list_recorded_moves("pollen-robotics/reachy-mini-emotions-library")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_daemon_client_does_not_stop_a_completed_platform_move() -> None:
     """A stale wake/sleep UUID is not forwarded to Daemon's erroring stop route."""
     requests: list[httpx.Request] = []

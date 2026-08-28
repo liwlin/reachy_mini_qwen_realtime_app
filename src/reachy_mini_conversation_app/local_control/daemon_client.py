@@ -5,6 +5,7 @@ import re
 import base64
 import asyncio
 from uuid import UUID
+from urllib.parse import quote
 
 import httpx
 from cryptography.hazmat.primitives import hashes
@@ -149,12 +150,7 @@ class DaemonClient:
             normalized_uuid = str(UUID(move_uuid))
         except ValueError:
             raise ValueError("invalid_move_uuid") from None
-        running = await self._request("GET", "/api/move/running", "motion_status")
-        if not isinstance(running, list):
-            raise LocalControlError("motion_status_invalid_response")
-        running_uuids = {
-            str(item.get("uuid")) for item in running if isinstance(item, dict) and isinstance(item.get("uuid"), str)
-        }
+        running_uuids = set(await self.running_motions())
         if normalized_uuid not in running_uuids:
             return None
         return await self._request(
@@ -164,12 +160,67 @@ class DaemonClient:
             json_body={"uuid": normalized_uuid},
         )
 
+    async def running_motions(self) -> list[str]:
+        """Return every valid Daemon move UUID currently running."""
+        payload = await self._request("GET", "/api/move/running", "motion_status")
+        if not isinstance(payload, list):
+            raise LocalControlError("motion_status_invalid_response")
+        running: list[str] = []
+        for item in payload:
+            if not isinstance(item, dict) or not isinstance(item.get("uuid"), str):
+                raise LocalControlError("motion_status_invalid_response")
+            try:
+                running.append(str(UUID(item["uuid"])))
+            except ValueError:
+                raise LocalControlError("motion_status_invalid_response") from None
+        return running
+
+    async def stop_all_motions(self) -> list[str]:
+        """Attempt to stop every running Daemon move and return their UUIDs."""
+        running = await self.running_motions()
+        failed = False
+        for move_uuid in running:
+            try:
+                await self._request(
+                    "POST",
+                    "/api/move/stop",
+                    "motion_stop",
+                    json_body={"uuid": move_uuid},
+                )
+            except LocalControlError:
+                failed = True
+        if failed:
+            raise LocalControlError("motion_stop_failed")
+        return running
+
     async def app_status(self) -> dict[str, object] | None:
         """Return the current managed application status."""
         payload = await self._request("GET", "/api/apps/current-app-status", "app_status")
         if payload is None:
             return None
         return self._mapping(payload, "app_status")
+
+    async def list_installed_apps(self) -> list[dict[str, object]]:
+        """Return Daemon's installed application entries."""
+        payload = await self._request("GET", "/api/apps/list-available/installed", "app_catalog")
+        if not isinstance(payload, list):
+            raise LocalControlError("app_catalog_invalid_response")
+        try:
+            return [self._mapping(item, "app_catalog") for item in payload]
+        except LocalControlError:
+            raise LocalControlError("app_catalog_invalid_response") from None
+
+    async def start_app(self, name: str) -> dict[str, object]:
+        """Start one catalog-validated installed app name."""
+        encoded_name = quote(name, safe="")
+        return self._mapping(
+            await self._request("POST", f"/api/apps/start-app/{encoded_name}", "app_start"),
+            "app_start",
+        )
+
+    async def stop_current_app(self) -> object | None:
+        """Stop the application currently holding Daemon's app slot."""
+        return await self._request("POST", "/api/apps/stop-current-app", "app_stop")
 
     async def start_qwen(self) -> dict[str, object]:
         """Start the fixed Qwen application."""
@@ -178,13 +229,38 @@ class DaemonClient:
 
     async def stop_qwen(self) -> object | None:
         """Stop the current managed application."""
-        return await self._request("POST", "/api/apps/stop-current-app", "qwen_stop")
+        return await self.stop_current_app()
 
     async def restart_qwen(self) -> dict[str, object]:
         """Restart the current managed application."""
         return self._mapping(
             await self._request("POST", "/api/apps/restart-current-app", "qwen_restart"),
             "qwen_restart",
+        )
+
+    async def list_recorded_moves(self, dataset: str) -> list[str]:
+        """List moves from one server-selected recorded-move dataset."""
+        encoded_dataset = quote(dataset, safe="/")
+        payload = await self._request(
+            "GET",
+            f"/api/move/recorded-move-datasets/list/{encoded_dataset}",
+            "recorded_moves",
+        )
+        if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
+            raise LocalControlError("recorded_moves_invalid_response")
+        return list(payload)
+
+    async def play_recorded_move(self, dataset: str, move: str) -> dict[str, object]:
+        """Play one catalog-validated move from a fixed dataset."""
+        encoded_dataset = quote(dataset, safe="/")
+        encoded_move = quote(move, safe="")
+        return self._mapping(
+            await self._request(
+                "POST",
+                f"/api/move/play/recorded-move-dataset/{encoded_dataset}/{encoded_move}",
+                "recorded_move_play",
+            ),
+            "recorded_move_play",
         )
 
     async def wifi_status(self) -> dict[str, object]:

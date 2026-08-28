@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from reachy_mini_conversation_app.local_control.app import create_local_control_app
 from reachy_mini_conversation_app.local_control.security import SessionAuthorizer
+from reachy_mini_conversation_app.local_control.qwen_client import QwenUnavailableError
 
 
 def _clients() -> tuple[AsyncMock, AsyncMock]:
@@ -36,6 +37,8 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     }
     qwen.execute_action.return_value = {"status": "looking left"}
     qwen.stop_actions.return_value = {"status": "stopped"}
+    qwen.suspend_motion.return_value = {"status": "suspended"}
+    qwen.resume_motion.return_value = {"status": "resumed"}
     return daemon, qwen
 
 
@@ -100,20 +103,87 @@ def test_qwen_lifecycle_and_action_routes_are_fixed() -> None:
     qwen.execute_action.assert_awaited_once_with("look_left")
 
 
-def test_platform_safety_routes_work_without_qwen() -> None:
-    """Emergency stop, motor mode, wake and sleep call the daemon directly."""
-    client, daemon, _qwen = _logged_in_client()
+def test_platform_safety_routes_coordinate_qwen_and_daemon_motion() -> None:
+    """Sleep yields motor ownership; wake enables motors before restoring Qwen motion."""
+    client, daemon, qwen = _logged_in_client()
+    events: list[str] = []
+
+    async def record_suspend() -> dict[str, str]:
+        events.append("qwen_suspend")
+        return {"status": "suspended"}
+
+    async def record_sleep() -> dict[str, str]:
+        events.append("daemon_sleep")
+        return {"uuid": "87654321-4321-8765-4321-876543218765"}
+
+    async def record_motor(mode: str) -> None:
+        events.append(f"motor_{mode}")
+
+    async def record_wake() -> dict[str, str]:
+        events.append("daemon_wake")
+        return {"uuid": "12345678-1234-5678-1234-567812345678"}
+
+    async def record_wait(move_uuid: str) -> None:
+        events.append(f"wait_{move_uuid}")
+
+    async def record_resume() -> dict[str, str]:
+        events.append("qwen_resume")
+        return {"status": "resumed"}
+
+    qwen.suspend_motion.side_effect = record_suspend
+    daemon.sleep.side_effect = record_sleep
+    daemon.set_motor_mode.side_effect = record_motor
+    daemon.wake.side_effect = record_wake
+    daemon.wait_for_motion.side_effect = record_wait
+    qwen.resume_motion.side_effect = record_resume
     with client:
+        assert client.post("/api/robot/sleep").status_code == 204
         assert client.post("/api/robot/wake").status_code == 204
         assert client.post("/api/robot/stop").status_code == 204
-        assert client.post("/api/robot/sleep").status_code == 204
         assert client.post("/api/motors/enabled").status_code == 204
         assert client.post("/api/motors/turbo").status_code == 422
 
-    daemon.stop_motion.assert_awaited_once_with("12345678-1234-5678-1234-567812345678")
+    daemon.stop_motion.assert_not_awaited()
     daemon.wake.assert_awaited_once_with()
     daemon.sleep.assert_awaited_once_with()
-    daemon.set_motor_mode.assert_awaited_once_with("enabled")
+    assert daemon.set_motor_mode.await_args_list[0].args == ("enabled",)
+    assert qwen.suspend_motion.await_count == 2
+    qwen.resume_motion.assert_awaited_once_with()
+    assert events[:8] == [
+        "qwen_suspend",
+        "daemon_sleep",
+        "wait_87654321-4321-8765-4321-876543218765",
+        "qwen_suspend",
+        "motor_enabled",
+        "daemon_wake",
+        "wait_12345678-1234-5678-1234-567812345678",
+        "qwen_resume",
+    ]
+
+
+def test_running_qwen_must_yield_before_platform_sleep() -> None:
+    """A running Qwen app cannot be bypassed when its motion RPC is unavailable."""
+    client, daemon, qwen = _logged_in_client()
+    qwen.suspend_motion.side_effect = QwenUnavailableError("qwen_rpc_unavailable")
+
+    with client:
+        response = client.post("/api/robot/sleep")
+
+    assert response.status_code == 503
+    daemon.sleep.assert_not_awaited()
+
+
+def test_platform_sleep_still_works_when_qwen_is_not_running() -> None:
+    """No Qwen RPC is required when the managed application is already stopped."""
+    client, daemon, qwen = _logged_in_client()
+    daemon.app_status.return_value = None
+
+    with client:
+        response = client.post("/api/robot/sleep")
+
+    assert response.status_code == 204
+    qwen.suspend_motion.assert_not_awaited()
+    daemon.sleep.assert_awaited_once_with()
 
 
 def test_logout_revokes_the_browser_session() -> None:

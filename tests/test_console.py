@@ -90,6 +90,24 @@ def test_robot_actions_stop_clears_shared_queue_over_rpc(monkeypatch: pytest.Mon
     stop.assert_called_once_with(handler.deps)
 
 
+def test_robot_motion_lifecycle_is_available_over_rpc() -> None:
+    """The local gateway can yield motor ownership without stopping Qwen audio."""
+    app = FastAPI()
+    handler = MagicMock()
+    handler.deps = MagicMock()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(handler, robot, settings_app=app)
+    stream._init_settings_ui_if_needed()
+
+    suspended = _rpc_call(app, "robot.motion.suspend")
+    resumed = _rpc_call(app, "robot.motion.resume")
+
+    assert suspended["result"] == {"status": "suspended"}
+    assert resumed["result"] == {"status": "resumed"}
+    handler.deps.movement_manager.suspend_output.assert_called_once_with()
+    handler.deps.movement_manager.resume_output.assert_called_once_with()
+
+
 async def _wait_until(predicate: Any, timeout: float = 1.0) -> None:
     """Wait until a test predicate becomes true."""
     deadline = asyncio.get_running_loop().time() + timeout

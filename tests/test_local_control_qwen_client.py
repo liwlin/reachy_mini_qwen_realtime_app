@@ -55,6 +55,30 @@ async def test_qwen_client_sends_only_fixed_action_rpc() -> None:
 
 
 @pytest.mark.asyncio
+async def test_qwen_client_exposes_fixed_motion_lifecycle_rpcs() -> None:
+    """The gateway can suspend and resume only the Qwen motion output."""
+    requests: list[dict[str, object]] = []
+
+    async def handler(websocket: object) -> None:
+        request = json.loads(await websocket.recv())  # type: ignore[attr-defined]
+        requests.append(request)
+        await websocket.send(  # type: ignore[attr-defined]
+            json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"status": "ok"}})
+        )
+
+    async with serve(handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        client = QwenRpcClient(f"ws://127.0.0.1:{port}")
+        await client.suspend_motion()
+        await client.resume_motion()
+
+    assert [request["method"] for request in requests] == [
+        "robot.motion.suspend",
+        "robot.motion.resume",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_qwen_client_surfaces_stable_rpc_reason() -> None:
     """RPC failures expose a stable reason rather than an upstream payload dump."""
 

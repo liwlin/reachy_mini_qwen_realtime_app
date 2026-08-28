@@ -634,6 +634,16 @@ class LocalStream:
         def _rpc_actions_stop(_params: dict[str, object]) -> dict[str, str]:
             return stop_local_actions(self.handler.deps)
 
+        @rpc.method("robot.motion.suspend")
+        def _rpc_motion_suspend(_params: dict[str, object]) -> dict[str, str]:
+            self.handler.deps.movement_manager.suspend_output()
+            return {"status": "suspended"}
+
+        @rpc.method("robot.motion.resume")
+        def _rpc_motion_resume(_params: dict[str, object]) -> dict[str, str]:
+            self.handler.deps.movement_manager.resume_output()
+            return {"status": "resumed"}
+
         @rpc.method("backend.config")
         def _rpc_backend_config(params: dict[str, object]) -> dict[str, object]:
             hf_selection = get_hf_connection_selection()

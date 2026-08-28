@@ -3,6 +3,7 @@
 import os
 import re
 import base64
+import asyncio
 from uuid import UUID
 
 import httpx
@@ -113,6 +114,34 @@ class DaemonClient:
     async def sleep(self) -> dict[str, object]:
         """Run the daemon sleep motion."""
         return self._mapping(await self._request("POST", "/api/move/play/goto_sleep", "sleep"), "sleep")
+
+    async def wait_for_motion(
+        self,
+        move_uuid: str,
+        *,
+        timeout_s: float = 15.0,
+        poll_interval_s: float = 0.1,
+    ) -> None:
+        """Wait until one Daemon move UUID is no longer running."""
+        try:
+            normalized_uuid = str(UUID(move_uuid))
+        except ValueError:
+            raise ValueError("invalid_move_uuid") from None
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while True:
+            running = await self._request("GET", "/api/move/running", "motion_status")
+            if not isinstance(running, list):
+                raise LocalControlError("motion_status_invalid_response")
+            running_uuids = {
+                str(item.get("uuid"))
+                for item in running
+                if isinstance(item, dict) and isinstance(item.get("uuid"), str)
+            }
+            if normalized_uuid not in running_uuids:
+                return
+            if asyncio.get_running_loop().time() >= deadline:
+                raise LocalControlError("motion_timeout")
+            await asyncio.sleep(max(0.0, poll_interval_s))
 
     async def stop_motion(self, move_uuid: str) -> object | None:
         """Stop one still-running daemon move UUID."""

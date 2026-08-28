@@ -210,6 +210,9 @@ class MovementManager:
         self.target_period = 1.0 / self.target_frequency
 
         self._stop_event = threading.Event()
+        self._output_suspended = threading.Event()
+        self._output_lock = threading.Lock()
+        self._resume_head_tracking = False
         self._thread: threading.Thread | None = None
         self._is_listening = False
         # Speaking pauses tracking; the captured look-at pose anchors queued moves.
@@ -251,6 +254,22 @@ class MovementManager:
         Thread-safe: executed by the worker thread via the command queue.
         """
         self._command_queue.put(("clear_queue", None))
+
+    def suspend_output(self) -> None:
+        """Yield motor ownership without stopping the conversation process.
+
+        The event blocks new ``set_target`` calls immediately. Taking the output
+        lock afterwards waits for a command already in flight, so returning from
+        this method is a hard ownership boundary for Daemon sleep/wake motions.
+        """
+        self._output_suspended.set()
+        with self._output_lock:
+            pass
+        self._command_queue.put(("suspend_output", None))
+
+    def resume_output(self) -> None:
+        """Resume Qwen motion from a neutral pose after Daemon wake completes."""
+        self._command_queue.put(("resume_output", None))
 
     def set_moving_state(self, duration: float) -> None:
         """Mark the robot as actively moving for the provided duration.
@@ -311,7 +330,9 @@ class MovementManager:
     def _handle_command(self, command: str, payload: Any, current_time: float) -> None:
         """Handle a single cross-thread command."""
         if command == "queue_move":
-            if isinstance(payload, Move):
+            if self._output_suspended.is_set():
+                logger.info("Ignored queued move while motor output is suspended")
+            elif isinstance(payload, Move):
                 self.move_queue.append(payload)
                 self.state.update_activity()
                 duration = getattr(payload, "duration", None)
@@ -335,6 +356,43 @@ class MovementManager:
             self.state.move_start_time = None
             self._breathing_active = False
             logger.info("Cleared move queue and stopped current move")
+        elif command == "suspend_output":
+            self.move_queue.clear()
+            self.state.current_move = None
+            self.state.move_start_time = None
+            self._breathing_active = False
+            self._track_anchor = None
+            self._is_speaking = False
+            if self._head_tracking:
+                self._resume_head_tracking = True
+                try:
+                    self.current_robot.stop_head_tracking()
+                except Exception as e:
+                    logger.warning("Failed to pause head tracking: %s", e)
+                self._head_tracking = False
+            logger.info("Suspended Qwen motor output")
+        elif command == "resume_output":
+            self.move_queue.clear()
+            self.state.current_move = None
+            self.state.move_start_time = None
+            self._breathing_active = False
+            neutral_head_pose = create_head_pose(0, 0, 0, 0, 0, 0, degrees=True)
+            neutral_pose: FullBodyPose = (neutral_head_pose, (-0.1745, 0.1745), 0.0)
+            self.state.last_primary_pose = clone_full_body_pose(neutral_pose)
+            self._last_commanded_pose = clone_full_body_pose(neutral_pose)
+            self._listening_antennas = neutral_pose[1]
+            self._antenna_unfreeze_blend = 1.0
+            self.state.update_activity()
+            if self._resume_head_tracking:
+                try:
+                    self.current_robot.start_head_tracking(weight=1.0)
+                except Exception as e:
+                    logger.warning("Failed to resume head tracking: %s", e)
+                else:
+                    self._head_tracking = True
+                self._resume_head_tracking = False
+            self._output_suspended.clear()
+            logger.info("Resumed Qwen motor output")
         elif command == "set_moving_state":
             try:
                 duration = float(payload)
@@ -369,6 +427,9 @@ class MovementManager:
             self.state.update_activity()
         elif command == "set_head_tracking":
             enabled = bool(payload)
+            if self._output_suspended.is_set():
+                self._resume_head_tracking = enabled
+                return
             if self._head_tracking == enabled:
                 return
             self._head_tracking = enabled
@@ -552,7 +613,10 @@ class MovementManager:
     ) -> None:
         """Send the pose to the robot with throttled error logging."""
         try:
-            self.current_robot.set_target(head=head, antennas=antennas, body_yaw=body_yaw)
+            with self._output_lock:
+                if self._output_suspended.is_set():
+                    return
+                self.current_robot.set_target(head=head, antennas=antennas, body_yaw=body_yaw)
         except Exception as e:
             now = self._now()
             if now - self._last_set_target_err >= self._set_target_err_interval:
@@ -705,6 +769,7 @@ class MovementManager:
             "queue_size": len(self.move_queue),
             "is_listening": self._is_listening,
             "breathing_active": self._breathing_active,
+            "output_suspended": self._output_suspended.is_set(),
             "last_commanded_pose": {
                 "head": head_matrix,
                 "antennas": antennas,

@@ -21,6 +21,7 @@ from reachy_mini_conversation_app.local_control.qwen_client import (
     QwenUnavailableError,
 )
 from reachy_mini_conversation_app.local_control.daemon_client import (
+    QWEN_APP_NAME,
     DaemonClient,
     LocalControlError,
 )
@@ -64,6 +65,26 @@ def create_local_control_app(
 
     app = FastAPI(title="Reachy Mini Local Control", lifespan=lifespan)
     active_platform_move_uuid: str | None = None
+
+    async def suspend_qwen_motion() -> bool:
+        current_app = await daemon_client.app_status()
+        if current_app is None or current_app.get("state") != "running":
+            return False
+        info = current_app.get("info")
+        if not isinstance(info, dict) or info.get("name") != QWEN_APP_NAME:
+            return False
+        await qwen_client.suspend_motion()
+        return True
+
+    async def resume_qwen_motion(was_suspended: bool) -> None:
+        if was_suspended:
+            await qwen_client.resume_motion()
+
+    def move_uuid(result: dict[str, object]) -> str:
+        value = result.get("uuid")
+        if not isinstance(value, str):
+            raise LocalControlError("motion_invalid_response")
+        return value
 
     def require_session(reachy_local_session: str | None = Cookie(default=None)) -> str:
         if reachy_local_session is None or not authorizer.is_valid(reachy_local_session):
@@ -152,16 +173,22 @@ def create_local_control_app(
     @app.post("/api/robot/wake", status_code=204)
     async def wake(_session: str = Depends(require_session)) -> None:
         nonlocal active_platform_move_uuid
+        qwen_suspended = await suspend_qwen_motion()
+        await daemon_client.set_motor_mode("enabled")
         result = await daemon_client.wake()
-        move_uuid = result.get("uuid")
-        active_platform_move_uuid = move_uuid if isinstance(move_uuid, str) else None
+        active_platform_move_uuid = move_uuid(result)
+        await daemon_client.wait_for_motion(active_platform_move_uuid)
+        active_platform_move_uuid = None
+        await resume_qwen_motion(qwen_suspended)
 
     @app.post("/api/robot/sleep", status_code=204)
     async def sleep(_session: str = Depends(require_session)) -> None:
         nonlocal active_platform_move_uuid
+        await suspend_qwen_motion()
         result = await daemon_client.sleep()
-        move_uuid = result.get("uuid")
-        active_platform_move_uuid = move_uuid if isinstance(move_uuid, str) else None
+        active_platform_move_uuid = move_uuid(result)
+        await daemon_client.wait_for_motion(active_platform_move_uuid)
+        active_platform_move_uuid = None
 
     @app.post("/api/robot/stop", status_code=204)
     async def stop(_session: str = Depends(require_session)) -> None:

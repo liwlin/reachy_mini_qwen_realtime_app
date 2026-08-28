@@ -99,3 +99,11 @@ class QwenRpcClient:
     async def stop_actions(self) -> dict[str, object]:
         """Clear the Qwen movement queue."""
         return self._mapping(await self.call("robot.actions.stop"))
+
+    async def suspend_motion(self) -> dict[str, object]:
+        """Yield motor ownership while keeping Qwen audio connected."""
+        return self._mapping(await self.call("robot.motion.suspend"))
+
+    async def resume_motion(self) -> dict[str, object]:
+        """Restore Qwen motor output after the platform wake motion."""
+        return self._mapping(await self.call("robot.motion.resume"))

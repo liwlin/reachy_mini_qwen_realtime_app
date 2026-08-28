@@ -124,6 +124,29 @@ async def test_daemon_client_rejects_unknown_motor_mode_without_request() -> Non
 
 
 @pytest.mark.asyncio
+async def test_wait_for_motion_polls_until_the_uuid_finishes() -> None:
+    """Sleep/wake coordination waits for Daemon to release motor ownership."""
+    move_uuid = "12345678-1234-5678-1234-567812345678"
+    responses = [
+        httpx.Response(200, json=[{"uuid": move_uuid}]),
+        httpx.Response(200, json=[]),
+    ]
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return responses.pop(0)
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        await client.wait_for_motion(move_uuid, timeout_s=0.5, poll_interval_s=0)
+    finally:
+        await client.close()
+
+    assert [request.url.path for request in requests] == ["/api/move/running", "/api/move/running"]
+
+
+@pytest.mark.asyncio
 async def test_daemon_client_connects_wifi_without_leaking_password() -> None:
     """Wi-Fi credentials are sealed for the daemon and stay out of URLs/results."""
     requests: list[httpx.Request] = []

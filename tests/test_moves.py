@@ -54,6 +54,30 @@ def test_stop_can_skip_neutral_reset(monkeypatch: pytest.MonkeyPatch) -> None:
     robot.goto_target.assert_not_called()
 
 
+def test_suspend_output_stops_commands_until_resumed() -> None:
+    """Daemon sleep/wake owns the motors while Qwen motion output is suspended."""
+    robot = MagicMock()
+    robot.get_current_head_pose.return_value = np.eye(4)
+    robot.get_current_joint_positions.return_value = ([0.0] * 6, [0.0, 0.0])
+    manager = MovementManager(robot)
+    manager.start()
+    try:
+        assert _wait_for(lambda: robot.set_target.call_count > 0)
+
+        manager.suspend_output()
+        count_while_suspended = robot.set_target.call_count
+        time.sleep(0.05)
+
+        assert robot.set_target.call_count == count_while_suspended
+        assert manager.get_status()["output_suspended"] is True
+
+        manager.resume_output()
+        assert _wait_for(lambda: robot.set_target.call_count > count_while_suspended)
+        assert manager.get_status()["output_suspended"] is False
+    finally:
+        manager.stop(reset_to_neutral=False)
+
+
 def test_head_tracking_follows_speaking() -> None:
     """Once enabled, tracking owns the head when idle and releases it while the assistant speaks."""
     robot = MagicMock()

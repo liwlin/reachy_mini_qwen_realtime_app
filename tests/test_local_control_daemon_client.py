@@ -18,6 +18,100 @@ from reachy_mini_conversation_app.local_control.daemon_client import (
 
 
 @pytest.mark.asyncio
+async def test_daemon_client_uses_fixed_speaker_and_microphone_volume_paths() -> None:
+    """Volume controls cannot select arbitrary Daemon paths or devices."""
+    seen: list[tuple[str, str, object | None]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        seen.append((request.method, request.url.path, body))
+        volume = body["volume"] if isinstance(body, dict) else (42 if "microphone" not in request.url.path else 61)
+        return httpx.Response(
+            200,
+            json={"volume": volume, "platform": "Linux", "device": "Reachy Mini Audio"},
+        )
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        assert await client.speaker_volume() == {
+            "volume": 42,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert await client.set_speaker_volume(55) == {
+            "volume": 55,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert await client.microphone_volume() == {
+            "volume": 61,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert await client.set_microphone_volume(73) == {
+            "volume": 73,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+    finally:
+        await client.close()
+
+    assert seen == [
+        ("GET", "/api/volume/current", None),
+        ("POST", "/api/volume/set", {"volume": 55}),
+        ("GET", "/api/volume/microphone/current", None),
+        ("POST", "/api/volume/microphone/set", {"volume": 73}),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", [-1, 101, 1.5, True, "50", None])
+async def test_daemon_client_rejects_invalid_volume_before_request(invalid: object) -> None:
+    """Out-of-range and non-integer volume values never reach the Daemon."""
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"volume": 50, "platform": "Linux", "device": "Audio"})
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(ValueError, match="invalid_volume"):
+            await client.set_speaker_volume(invalid)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="invalid_volume"):
+            await client.set_microphone_volume(invalid)  # type: ignore[arg-type]
+    finally:
+        await client.close()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"volume": -1, "platform": "Linux", "device": "Audio"},
+        {"volume": 101, "platform": "Linux", "device": "Audio"},
+        {"volume": True, "platform": "Linux", "device": "Audio"},
+        {"volume": 50, "platform": 7, "device": "Audio"},
+        {"volume": 50, "platform": "Linux", "device": None},
+    ],
+)
+async def test_daemon_client_rejects_malformed_volume_responses(payload: object) -> None:
+    """Malformed upstream audio state is not forwarded to the phone."""
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = DaemonClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(LocalControlError, match="speaker_volume_invalid_response"):
+            await client.speaker_volume()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_daemon_client_starts_qwen_on_the_fixed_app_path() -> None:
     """The mobile API cannot choose an arbitrary application name."""
     requests: list[httpx.Request] = []

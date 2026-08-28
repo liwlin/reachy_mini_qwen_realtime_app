@@ -70,7 +70,7 @@ class DaemonClient:
         path: str,
         operation: str,
         params: dict[str, str] | None = None,
-        json_body: dict[str, str] | None = None,
+        json_body: dict[str, object] | None = None,
     ) -> object | None:
         try:
             response = await self._client.request(method, path, params=params, json=json_body)
@@ -102,6 +102,57 @@ class DaemonClient:
     async def motor_status(self) -> dict[str, object]:
         """Return the current motor mode."""
         return self._mapping(await self._request("GET", "/api/motors/status", "motor_status"), "motor_status")
+
+    @staticmethod
+    def _validate_volume(volume: object) -> int:
+        if isinstance(volume, bool) or not isinstance(volume, int) or not 0 <= volume <= 100:
+            raise ValueError("invalid_volume")
+        return volume
+
+    @classmethod
+    def _volume_response(cls, payload: object | None, operation: str) -> dict[str, object]:
+        response = cls._mapping(payload, operation)
+        try:
+            volume = cls._validate_volume(response["volume"])
+            platform = response["platform"]
+            device = response["device"]
+        except (KeyError, ValueError):
+            raise LocalControlError(f"{operation}_invalid_response") from None
+        if not isinstance(platform, str) or not isinstance(device, str):
+            raise LocalControlError(f"{operation}_invalid_response")
+        return {"volume": volume, "platform": platform, "device": device}
+
+    async def speaker_volume(self) -> dict[str, object]:
+        """Return the current speaker output volume."""
+        payload = await self._request("GET", "/api/volume/current", "speaker_volume")
+        return self._volume_response(payload, "speaker_volume")
+
+    async def set_speaker_volume(self, volume: int) -> dict[str, object]:
+        """Set the speaker output volume through the fixed Daemon endpoint."""
+        normalized = self._validate_volume(volume)
+        payload = await self._request(
+            "POST",
+            "/api/volume/set",
+            "speaker_volume_set",
+            json_body={"volume": normalized},
+        )
+        return self._volume_response(payload, "speaker_volume_set")
+
+    async def microphone_volume(self) -> dict[str, object]:
+        """Return the current microphone input volume."""
+        payload = await self._request("GET", "/api/volume/microphone/current", "microphone_volume")
+        return self._volume_response(payload, "microphone_volume")
+
+    async def set_microphone_volume(self, volume: int) -> dict[str, object]:
+        """Set the microphone input volume through the fixed Daemon endpoint."""
+        normalized = self._validate_volume(volume)
+        payload = await self._request(
+            "POST",
+            "/api/volume/microphone/set",
+            "microphone_volume_set",
+            json_body={"volume": normalized},
+        )
+        return self._volume_response(payload, "microphone_volume_set")
 
     async def set_motor_mode(self, mode: str) -> object | None:
         """Set an allowlisted motor mode."""

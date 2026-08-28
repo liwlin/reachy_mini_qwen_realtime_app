@@ -56,6 +56,26 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     daemon.stop_all_motions.return_value = []
     daemon.scan_wifi.return_value = ["EventNet", "Guest"]
     daemon.wifi_error.return_value = {"error": None}
+    daemon.speaker_volume.return_value = {
+        "volume": 42,
+        "platform": "Linux",
+        "device": "Reachy Mini Audio",
+    }
+    daemon.set_speaker_volume.return_value = {
+        "volume": 55,
+        "platform": "Linux",
+        "device": "Reachy Mini Audio",
+    }
+    daemon.microphone_volume.return_value = {
+        "volume": 61,
+        "platform": "Linux",
+        "device": "Reachy Mini Audio",
+    }
+    daemon.set_microphone_volume.return_value = {
+        "volume": 73,
+        "platform": "Linux",
+        "device": "Reachy Mini Audio",
+    }
     qwen = AsyncMock()
     qwen.status.return_value = {
         "backend": "qwen",
@@ -94,6 +114,54 @@ def test_protected_routes_require_a_valid_session() -> None:
         assert client.get("/api/motions/catalog").status_code == 401
         assert client.post("/api/qwen/start").status_code == 401
         assert client.post("/api/robot/stop").status_code == 401
+        assert client.get("/api/media/volume").status_code == 401
+        assert client.post("/api/media/volume", json={"volume": 55}).status_code == 401
+        assert client.get("/api/media/microphone").status_code == 401
+        assert client.post("/api/media/microphone", json={"volume": 73}).status_code == 401
+
+
+def test_media_volume_routes_read_and_write_fixed_audio_controls() -> None:
+    """Authenticated media settings expose only sanitized speaker and microphone values."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        assert client.get("/api/media/volume").json() == {
+            "volume": 42,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert client.post("/api/media/volume", json={"volume": 55}).json() == {
+            "volume": 55,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert client.get("/api/media/microphone").json() == {
+            "volume": 61,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+        assert client.post("/api/media/microphone", json={"volume": 73}).json() == {
+            "volume": 73,
+            "platform": "Linux",
+            "device": "Reachy Mini Audio",
+        }
+
+    daemon.speaker_volume.assert_awaited_once_with()
+    daemon.set_speaker_volume.assert_awaited_once_with(55)
+    daemon.microphone_volume.assert_awaited_once_with()
+    daemon.set_microphone_volume.assert_awaited_once_with(73)
+
+
+def test_media_volume_routes_reject_invalid_values_before_daemon_calls() -> None:
+    """FastAPI validation rejects ambiguous and unsafe volume representations."""
+    client, daemon, _qwen = _logged_in_client()
+    invalid_values = [-1, 101, 1.5, True, "50", None]
+    with client:
+        for value in invalid_values:
+            assert client.post("/api/media/volume", json={"volume": value}).status_code == 422
+            assert client.post("/api/media/microphone", json={"volume": value}).status_code == 422
+
+    daemon.set_speaker_volume.assert_not_awaited()
+    daemon.set_microphone_volume.assert_not_awaited()
 
 
 def test_status_aggregates_daemon_motor_wifi_and_qwen() -> None:

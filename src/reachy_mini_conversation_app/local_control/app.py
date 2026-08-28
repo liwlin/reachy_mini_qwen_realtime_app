@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import Cookie, Depends, FastAPI, Response, HTTPException
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, StrictInt
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
@@ -57,6 +57,12 @@ class SavedWifiPayload(BaseModel):
     """Previously saved Wi-Fi network selected for activation."""
 
     ssid: str = Field(min_length=1, max_length=32)
+
+
+class VolumePayload(BaseModel):
+    """Strict local audio volume accepted by the narrow Daemon proxy."""
+
+    volume: StrictInt = Field(ge=0, le=100)
 
 
 def create_local_control_app(
@@ -186,6 +192,28 @@ def create_local_control_app(
         else:
             qwen = {"backend_connected": False, "backend_error": "not_running"}
         return {"daemon": daemon, "motors": motors, "app": current_app, "wifi": wifi, "qwen": qwen}
+
+    @app.get("/api/media/volume")
+    async def get_speaker_volume(_session: str = Depends(require_session)) -> dict[str, object]:
+        return await daemon_client.speaker_volume()
+
+    @app.post("/api/media/volume")
+    async def set_speaker_volume(
+        payload: VolumePayload,
+        _session: str = Depends(require_session),
+    ) -> dict[str, object]:
+        return await daemon_client.set_speaker_volume(payload.volume)
+
+    @app.get("/api/media/microphone")
+    async def get_microphone_volume(_session: str = Depends(require_session)) -> dict[str, object]:
+        return await daemon_client.microphone_volume()
+
+    @app.post("/api/media/microphone")
+    async def set_microphone_volume(
+        payload: VolumePayload,
+        _session: str = Depends(require_session),
+    ) -> dict[str, object]:
+        return await daemon_client.set_microphone_volume(payload.volume)
 
     @app.get("/api/apps")
     async def list_apps(_session: str = Depends(require_session)) -> list[dict[str, object]]:

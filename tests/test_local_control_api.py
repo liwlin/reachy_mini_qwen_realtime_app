@@ -22,7 +22,7 @@ def _clients() -> tuple[AsyncMock, AsyncMock]:
     }
     daemon.wifi_status.return_value = {
         "mode": "wlan",
-        "known_networks": ["EventNet"],
+        "known_networks": ["EventNet", "BackupNet"],
         "connected_network": "EventNet",
     }
     daemon.start_qwen.return_value = {"state": "running", "error": None}
@@ -111,7 +111,11 @@ def test_status_aggregates_daemon_motor_wifi_and_qwen() -> None:
             "error": None,
             "info": {"name": "reachy_mini_qwen_realtime_app"},
         },
-        "wifi": {"mode": "wlan", "known_networks": ["EventNet"], "connected_network": "EventNet"},
+        "wifi": {
+            "mode": "wlan",
+            "known_networks": ["EventNet", "BackupNet"],
+            "connected_network": "EventNet",
+        },
         "qwen": {"backend": "qwen", "backend_connected": True, "backend_error": None},
     }
 
@@ -351,6 +355,42 @@ def test_wifi_routes_scan_connect_forget_and_report_status() -> None:
 
     daemon.connect_wifi.assert_awaited_once_with("EventNet", "private-passphrase")
     daemon.forget_wifi.assert_awaited_once_with("Guest")
+
+
+def test_saved_network_switch_reuses_stored_credentials() -> None:
+    """A known inactive SSID is activated without asking the phone for its password."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        response = client.post("/api/wifi/switch", json={"ssid": "BackupNet"})
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "switching", "ssid": "BackupNet"}
+    daemon.connect_wifi.assert_awaited_once_with("BackupNet", "")
+
+
+def test_saved_network_switch_is_idempotent_and_rejects_unknown_names() -> None:
+    """Current/unknown SSIDs cannot create or replace saved NetworkManager entries."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        current = client.post("/api/wifi/switch", json={"ssid": "EventNet"})
+        unknown = client.post("/api/wifi/switch", json={"ssid": "InjectedNet"})
+
+    assert current.json() == {"status": "already_connected", "ssid": "EventNet"}
+    assert unknown.status_code == 404
+    assert unknown.json() == {"detail": "unknown_saved_network"}
+    daemon.connect_wifi.assert_not_awaited()
+
+
+def test_saved_network_switch_rejects_control_characters() -> None:
+    """Malformed path/log data is rejected before Wi-Fi status or connect calls."""
+    client, daemon, _qwen = _logged_in_client()
+    with client:
+        response = client.post("/api/wifi/switch", json={"ssid": "bad\nssid"})
+
+    assert response.status_code == 422
+    assert response.json() == {"error": "invalid_ssid"}
+    daemon.wifi_status.assert_not_awaited()
+    daemon.connect_wifi.assert_not_awaited()
 
 
 def test_wifi_connect_rejects_control_characters_without_forwarding() -> None:

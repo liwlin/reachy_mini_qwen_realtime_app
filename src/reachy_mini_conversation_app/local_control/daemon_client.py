@@ -25,7 +25,8 @@ class LocalControlError(RuntimeError):
     """Report a sanitized failure at the local daemon boundary."""
 
 
-def _validate_ssid(ssid: str) -> str:
+def validate_ssid(ssid: str) -> str:
+    """Normalize one SSID and reject control characters or invalid byte length."""
     normalized = ssid.strip()
     if not normalized or len(normalized.encode("utf-8")) > 32 or _CONTROL_CHARACTERS.search(normalized):
         raise ValueError("invalid_ssid")
@@ -276,7 +277,7 @@ class DaemonClient:
 
     async def connect_wifi(self, ssid: str, password: str) -> object | None:
         """Ask NetworkManager to join a validated network."""
-        normalized_ssid = _validate_ssid(ssid)
+        normalized_ssid = validate_ssid(ssid)
         normalized_password = _validate_wifi_password(password)
         if self._provisioning_pin is None:
             raise LocalControlError("wifi_provisioning_unavailable")
@@ -326,7 +327,7 @@ class DaemonClient:
             "POST",
             "/wifi/forget",
             "wifi_forget",
-            params={"ssid": _validate_ssid(ssid)},
+            params={"ssid": validate_ssid(ssid)},
         )
 
     async def wifi_error(self) -> dict[str, str | None]:

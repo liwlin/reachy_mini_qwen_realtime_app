@@ -25,6 +25,7 @@ from reachy_mini_conversation_app.local_control.daemon_client import (
     QWEN_APP_NAME,
     DaemonClient,
     LocalControlError,
+    validate_ssid,
 )
 from reachy_mini_conversation_app.local_control.motion_control import MotionCoordinator, MotionControlError
 
@@ -48,6 +49,12 @@ class WifiConnectPayload(BaseModel):
 
 class WifiForgetPayload(BaseModel):
     """Saved network selected for removal."""
+
+    ssid: str = Field(min_length=1, max_length=32)
+
+
+class SavedWifiPayload(BaseModel):
+    """Previously saved Wi-Fi network selected for activation."""
 
     ssid: str = Field(min_length=1, max_length=32)
 
@@ -291,6 +298,21 @@ def create_local_control_app(
     ) -> dict[str, str]:
         await daemon_client.connect_wifi(payload.ssid, payload.password)
         return {"status": "connecting"}
+
+    @app.post("/api/wifi/switch", status_code=202)
+    async def switch_saved_wifi(
+        payload: SavedWifiPayload,
+        _session: str = Depends(require_session),
+    ) -> dict[str, str]:
+        ssid = validate_ssid(payload.ssid)
+        status = await daemon_client.wifi_status()
+        known_networks = status.get("known_networks")
+        if not isinstance(known_networks, list) or ssid not in known_networks:
+            raise HTTPException(status_code=404, detail="unknown_saved_network")
+        if status.get("connected_network") == ssid:
+            return {"status": "already_connected", "ssid": ssid}
+        await daemon_client.connect_wifi(ssid, "")
+        return {"status": "switching", "ssid": ssid}
 
     @app.post("/api/wifi/forget", status_code=204)
     async def forget_wifi(

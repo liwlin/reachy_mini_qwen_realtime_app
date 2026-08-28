@@ -124,8 +124,10 @@ calls.
 
 `GET /api/motions/catalog` returns source status plus live move names. Default
 Pollen datasets are read through Daemon because the Wireless image preloads them.
-Music-dance metadata follows the official desktop-app catalog, but the source is
-reported unavailable unless the dataset is locally cached and playable.
+Music-dance metadata follows the official desktop-app catalog. Before calling
+Daemon, the gateway checks for the Hugging Face cache directory
+`datasets--Anne-Charlotte--music` below the configured Hub cache root. A missing
+directory is reported as unavailable without starting a network request.
 
 Move labels are derived from stable IDs for display only. Playback always uses
 the exact server-returned ID. The page provides Emotions and Dances tabs, search,
@@ -193,9 +195,10 @@ switching must work from robot-local state. A missing optional music dataset mus
 not trigger an unbounded Hugging Face request from a dashboard refresh.
 
 For the project robot, deployment may separately pre-cache the official
-`Anne-Charlotte/music` dataset. That cache is device state, not a Git artifact.
-Community installations without it display Music dances not installed and keep
-all other controls operational.
+`Anne-Charlotte/music` dataset under the standard Hugging Face Hub cache root at
+`/home/pollen/.cache/huggingface/hub/datasets--Anne-Charlotte--music`. That cache
+is device state, not a Git artifact. Community installations without it display
+Music dances not installed and keep all other controls operational.
 
 ## Error Handling and Concurrency
 

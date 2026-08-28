@@ -28,6 +28,7 @@ def test_mobile_pages_are_self_contained_and_touch_friendly() -> None:
     assert 'name="viewport"' in media
     assert not re.search(r"https?://", combined)
     assert "min-height: 48px" in css
+    assert ".button--small { min-height: 48px" in css
     assert "@media (max-width: 620px)" in css
     assert "env(safe-area-inset-bottom)" in css
 

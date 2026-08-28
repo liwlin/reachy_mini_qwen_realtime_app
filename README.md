@@ -51,7 +51,7 @@ Community build of Pollen Robotics' Reachy Mini Conversation App, adding direct 
 
 ## Community release
 
-Version `v1.0.1-qwen.4` keeps upstream v1's `ConversationHandler`, profile store, UI, memory, and generic Tool Space architecture, then adds provider-local Qwen wire handling, direct Exa search, and an HF-independent LAN mobile controller. It includes all qwen.3 local-control and Wireless audio fixes:
+Version `v1.0.1-qwen.5` keeps upstream v1's `ConversationHandler`, profile store, UI, memory, and generic Tool Space architecture, then adds provider-local Qwen wire handling, direct Exa search, and an HF-independent LAN mobile controller. It includes all qwen.4 local-control and Wireless audio fixes:
 
 - 16 kHz PCM microphone input and 24 kHz PCM Qwen speech output.
 - Camera frames committed through Qwen's image buffer, serialized against microphone frames, with server VAD restored even after image-send failure.
@@ -71,13 +71,15 @@ Version `v1.0.1-qwen.4` keeps upstream v1's `ConversationHandler`, profile store
 - Saved hotspot/router profiles and the existing `reachy-mini-ap` fallback are manageable without Hugging Face OAuth or signaling.
 - Installed apps can be listed, stopped, and switched with confirmation and automatic rollback; cached emotions and dances are searchable through live Daemon catalogs without move stacking.
 - Saved Wi-Fi profiles can be activated without re-entering their passwords, and the red emergency stop now stops every Daemon move before disabling motors.
+- The PIN-protected media page consumes the robot's existing LAN WebRTC producer directly on port 8443, renders silent video without HF signalling, and never requests phone camera or microphone access.
+- Speaker output and microphone input volumes are readable and adjustable from the phone through four fixed Daemon 1.9 loopback operations; the browser receives no general REST proxy.
 
 <details>
 <summary>中文快速说明</summary>
 
 本社区版以官方 `v1.0.1` 为基线，直接支持 Qwen Omni Realtime 中文语音、真实摄像头视觉、动作/表情/舞蹈和 Exa MCP 网络搜索。升级自 v0.5 时，原有 Qwen Key、workspace、region、model、外部角色和工具配置可以继续使用。
 
-1. 从 [Releases](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases) 下载 `v1.0.1-qwen.4` wheel。
+1. 从 [Releases](https://github.com/liwlin/reachy_mini_qwen_realtime_app/releases) 下载 `v1.0.1-qwen.5` wheel。
 2. 复制 `.env.example` 为 `.env`，配置 `REALTIME_BACKEND=qwen`、`DASHSCOPE_API_KEY` 以及 workspace ID 或完整官方 WebSocket URL。
 3. 启动 `reachy-mini-qwen-realtime-app`；Wireless Control App 会通过 7860 二级页面显示角色、工具和设置。
 4. `web_search` 默认使用 Exa MCP，可匿名限量使用；高频使用时配置 `EXA_API_KEY`。
@@ -495,11 +497,11 @@ reachy-mini-qwen-realtime-app --robot-name <name>
 
 ## Local mobile control
 
-The qwen.4 wheel adds a second process that is deliberately independent from the conversation app. It runs on the Wireless robot, talks to Daemon 1.9 and Qwen only over loopback, and serves a same-origin phone UI on port 7861. It does not relax Daemon CORS, expose arbitrary REST paths, accept arbitrary joint targets, or proxy arbitrary URLs.
+The qwen.5 wheel adds a second process that is deliberately independent from the conversation app. It runs on the Wireless robot, talks to Daemon 1.9 and Qwen only over loopback, and serves a same-origin phone UI on port 7861. It does not relax Daemon CORS, expose arbitrary REST paths, accept arbitrary joint targets, or proxy arbitrary URLs.
 
 ### Install the persistent system service on Wireless
 
-After installing the qwen.4 wheel into `/venvs/apps_venv`, copy the packaged system unit. Systemd starts it after the Daemon while the controller process itself runs as the unprivileged `pollen` user:
+After installing the qwen.5 wheel into `/venvs/apps_venv`, copy the packaged system unit. Systemd starts it after the Daemon while the controller process itself runs as the unprivileged `pollen` user:
 
 ```bash
 unit=$(/venvs/apps_venv/bin/python -c "from importlib.resources import files; print(files('reachy_mini_conversation_app.local_control').joinpath('local.service'))")
@@ -519,9 +521,10 @@ After login, the focused secondary pages are:
 
 - `http://reachy-mini.local:7861/apps` — list, stop, and switch installed apps.
 - `http://reachy-mini.local:7861/motions` — search live cached emotions and dances, with separate ordinary and emergency stop controls.
+- `http://reachy-mini.local:7861/media` — connect silent live video, enter fullscreen, and adjust speaker/microphone volume.
 - `http://reachy-mini.local:7861/setup` — switch saved networks, scan nearby SSIDs, or provision a new network.
 
-Sign in with the robot's device PIN. Sessions stay in memory, repeated wrong PIN attempts are temporarily throttled, and neither the PIN nor Wi-Fi passwords are stored in the browser.
+Sign in with the robot's device PIN. Sessions stay in memory, repeated wrong PIN attempts are temporarily throttled, and neither the PIN nor Wi-Fi passwords are stored in the browser. The media page starts video only after a tap, uses `muted`/`playsinline` for iPhone Safari, discards the robot audio track, and does not ask the phone for media permissions. Speaker changes are applied when the slider is released because Daemon 1.9 plays one short test sound after an output-volume change.
 
 ### Network workflow
 
@@ -534,7 +537,7 @@ The hotspot hosted by the same phone used for control must be saved in advance: 
 
 ### Offline and HF-free boundary
 
-LAN status, installed-app switching, Qwen start/stop/restart, motor enable/disable, wake/sleep, saved-network switching, cached expressions, and emergency stop do not use Hugging Face OAuth or signaling. Qwen conversation still needs outbound DashScope access, and Exa search still needs internet. The Pollen emotion/dance datasets are preloaded by Wireless Daemon; optional music dances appear only when the device has a local `Anne-Charlotte/music` cache.
+LAN status, installed-app switching, Qwen start/stop/restart, motor enable/disable, wake/sleep, saved-network switching, cached expressions, emergency stop, volume control, and local camera viewing do not use Hugging Face OAuth or signalling. The browser negotiates video with the existing GStreamer service at `ws://<robot-host>:8443`; it sends no audio or robot commands. Qwen conversation still needs outbound DashScope access, and Exa search still needs internet. The Pollen emotion/dance datasets are preloaded by Wireless Daemon; optional music dances appear only when the device has a local `Anne-Charlotte/music` cache.
 
 ### Disable or roll back
 
@@ -544,7 +547,7 @@ sudo rm /etc/systemd/system/reachy-mini-local-control.service
 sudo systemctl daemon-reload
 ```
 
-Disabling the companion service does not change Daemon 1.9, Qwen credentials, profiles, startup selection, or motor configuration. To roll back the application, reinstall the previously saved qwen.3 wheel with `--no-deps --force-reinstall`, then restart Daemon and the Qwen app.
+Disabling the companion service does not change Daemon 1.9, Qwen credentials, profiles, startup selection, or motor configuration. To roll back the application, reinstall the previously saved qwen.4 wheel with `--no-deps --force-reinstall`, then restart the local-control service and the Qwen app.
 
 ## Regional connectivity and rollback
 

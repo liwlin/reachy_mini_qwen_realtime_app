@@ -136,7 +136,7 @@ def test_community_project_metadata_and_entry_points() -> None:
     metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert metadata["project"]["name"] == "reachy_mini_qwen_realtime_app"
-    assert metadata["project"]["version"] == "1.0.1+qwen.5"
+    assert metadata["project"]["version"] == "1.0.1+qwen.6"
     assert (project_root / "docs" / "release-notes-v1.0.1-qwen.5.md").is_file()
     assert metadata["project"]["scripts"] == {
         "reachy-mini-qwen-realtime-app": "reachy_mini_conversation_app.main:main",

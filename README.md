@@ -52,6 +52,8 @@ Community build of Pollen Robotics' Reachy Mini Conversation App, adding direct 
 
 ## Community release
 
+The development target `v1.0.1-qwen.6` adds direct city weather and date-filtered Exa MCP news to the released qwen.5 base. It is a test candidate until physical voice acceptance is complete. It also adapts ordinary Exa search to the current required `objective` argument and treats MCP tool errors as failures instead of search evidence.
+
 Version `v1.0.1-qwen.5` keeps upstream v1's `ConversationHandler`, profile store, UI, memory, and generic Tool Space architecture, then adds provider-local Qwen wire handling, direct Exa search, and an HF-independent LAN mobile controller. It includes all qwen.4 local-control and Wireless audio fixes:
 
 - 16 kHz PCM microphone input and 24 kHz PCM Qwen speech output.
@@ -76,6 +78,8 @@ Version `v1.0.1-qwen.5` keeps upstream v1's `ConversationHandler`, profile store
 - Speaker output and microphone input volumes are readable and adjustable from the phone through four fixed Daemon 1.9 loopback operations; the browser receives no general REST proxy.
 
 ## 中文快速使用说明
+
+> 天气与新闻扩展正在 `feat/weather-news` 分支开发，测试版本为 `1.0.1+qwen.6`。下方安装附件仍指向已发布的 qwen.5；新功能使用方法见下文 [Weather and news](#weather-and-news)。
 
 适用于 **Reachy Mini Wireless + 社区应用 v1.0.1-qwen.5**。本版本真机验收基线为 **Daemon 1.9.0**；应用版本和系统版本分别管理，使用这些功能不需要先升级 Daemon。已完成安装和 Qwen 配置的机器人，可以直接从下面第 1 步开始。
 
@@ -273,6 +277,36 @@ MCP_WEB_SEARCH_TIMEOUT_SECONDS=8
 ```
 
 The default endpoint supports limited keyless use. The MCP client uses short-lived Streamable HTTP sessions, retries one isolated MCP failure, bounds returned text to 6,000 characters, treats it as untrusted external evidence, and never forwards audio, images, robot identifiers, or local files.
+
+### Weather and news
+
+The qwen.6 candidate adds two ordinary Function Tools alongside `web_search`, camera, and motion:
+
+| Tool | Purpose |
+| --- | --- |
+| `get_weather` | Current model-based conditions plus one daily forecast, from today through six days ahead, in the city's local timezone. |
+| `get_news` | Up to five dated stories for a topic or place, within a rolling one-to-seven-day window, through Exa's advanced MCP search. |
+
+在当前人格的 **Tools → Tool access** 中启用 **Get Weather**、**Get News** 和 **Web Search**，保存后即可语音查询：
+
+- “今天天气怎么样？”——使用设备配置的默认城市。
+- “北京明天会下雨吗？”——指定城市覆盖默认城市，按当地日期查询。
+- “最近两天有什么科技新闻？”——返回指定时间范围内的新闻，播报来源和发布日期。
+- “搜索一下江门本地新闻。”——按明确地点搜索；没有符合日期的结果时会说明。
+
+默认城市仅在用户没有指定城市时使用。在应用私有环境中设置：
+
+```env
+# Optional; leave blank to ask for the city when the user omits it.
+WEATHER_DEFAULT_CITY=
+WEATHER_DEFAULT_REGION=
+```
+
+Restart the app after changing these values. Chinese city aliases are checked against administrative-city matches before selecting a same-name village. Ambiguous locations prompt for a province/country. Forecast responses carry the resolved city, local date/time, source URL and retrieval time; unavailable measurements remain null. Weather uses [Open-Meteo](https://open-meteo.com/en/docs) and [GeoNames geocoding](https://open-meteo.com/en/docs/geocoding-api), without HF or a weather API key. Open-Meteo's free endpoint is for non-commercial use; commercial deployments need an appropriate service plan.
+
+News uses [Exa MCP advanced search](https://exa.ai/docs/get-started/exa-mcp#advanced-search) with publication-date filters. The client additionally rejects stale, future-dated, undated, duplicate and invalid-URL results. `days=1` means the last 24 hours, not strictly local midnight onward. A publication date may differ from an event date. The normal Exa keyless quota or configured `EXA_API_KEY` applies. A configured non-Exa MCP endpoint can still serve generic searches, but this news tool requires the Exa endpoint.
+
+Existing personalities retain their tool selections. Enable the new tools explicitly for custom profiles; do not assume installing a new wheel updates a saved tool-access override. The packaged default profile uses the direct weather tool instead of the HF-hosted weather Space. Camera/audio files, robot identifiers and API keys are never included in weather queries or news queries.
 
 ### Hugging Face Connection Modes
 

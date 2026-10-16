@@ -5,6 +5,7 @@ import json
 import importlib
 import importlib.util
 from typing import Any
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock
 
 import httpx
@@ -58,10 +59,11 @@ async def test_mcp_search_initializes_calls_tool_and_closes_session() -> None:
         if method == "notifications/initialized":
             return httpx.Response(202)
         if method == "tools/call":
-            assert payload["params"] == {
-                "name": "web_search_exa",
-                "arguments": {"query": "latest Reachy Mini news", "numResults": 3},
-            }
+            assert payload["params"]["name"] == "web_search_exa"
+            arguments = payload["params"]["arguments"]
+            assert arguments["query"] == "latest Reachy Mini news"
+            assert arguments["numResults"] == 3
+            assert isinstance(arguments.get("objective"), str) and arguments["objective"].strip()
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
@@ -162,3 +164,139 @@ async def test_web_search_tool_isolates_mcp_failures(monkeypatch: pytest.MonkeyP
 
     assert result == {"error": "Web search is temporarily unavailable."}
     search.assert_awaited_once_with("today's robotics news", num_results=2)
+
+
+def _mcp_transport(tool_result, requests):
+    def handler(request):
+        requests.append(request)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        payload = json.loads(request.content)
+        if payload.get("method") == "initialize":
+            return httpx.Response(
+                200,
+                headers={"mcp-session-id": "news-test"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                        "serverInfo": {"name": "test", "version": "1"},
+                    },
+                },
+            )
+        if payload.get("method") == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 2, "result": tool_result})
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_error_is_not_presented_as_search_evidence():
+    """An MCP error response must not become purported search evidence."""
+    Client, Error, _ = _search_types()
+    requests = []
+    client = Client(
+        transport=_mcp_transport(
+            {"isError": True, "content": [{"type": "text", "text": "private upstream failure"}]},
+            requests,
+        )
+    )
+    with pytest.raises(Error) as captured:
+        await client.search("latest news")
+    assert "private upstream failure" not in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_news_filters_stale_future_undated_and_duplicate_sources():
+    """Only dated, recent, unique public links survive the news boundary."""
+    Client, _, _ = _search_types()
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(hours=2)).isoformat()
+    entries = [
+        {
+            "url": "https://news.example/story",
+            "title": "A real update",
+            "publishedDate": recent,
+            "text": "evidence " * 2000,
+        },
+        {"url": "https://news.example/story", "title": "Duplicate", "publishedDate": recent},
+        {"url": "https://news.example/old", "title": "Old", "publishedDate": (now - timedelta(days=10)).isoformat()},
+        {"url": "https://news.example/future", "publishedDate": (now + timedelta(days=1)).isoformat()},
+        {"url": "https://news.example/unknown", "title": "Undated"},
+        {"url": "javascript:alert(1)", "title": "Unsafe link", "publishedDate": recent},
+    ]
+    requests = []
+    client = Client(
+        transport=_mcp_transport(
+            {"content": [{"type": "text", "text": json.dumps({"results": entries})}]},
+            requests,
+        )
+    )
+    result = await client.search_news("科技新闻", days=2, num_results=3)
+    assert len(result["results"]) == 1
+    assert result["results"][0]["url"] == "https://news.example/story"
+    assert result["results"][0]["published_at"] == recent
+    assert len(result["results"][0]["excerpt"]) <= 1000
+    assert result["status"] == "ok"
+    call = next(
+        json.loads(r.content)
+        for r in requests
+        if r.method == "POST" and json.loads(r.content).get("method") == "tools/call"
+    )
+    assert call["params"]["name"] == "web_search_advanced_exa"
+    arguments = call["params"]["arguments"]
+    assert arguments["category"] == "news"
+    assert arguments["numResults"] == 3
+    start = datetime.fromisoformat(arguments["startPublishedDate"])
+    end = datetime.fromisoformat(arguments["endPublishedDate"])
+    assert end - start == timedelta(days=2)
+    assert start < datetime.fromisoformat(recent) < end
+    assert "web_search_advanced_exa" in requests[0].url.params["tools"]
+
+
+@pytest.mark.asyncio
+async def test_news_returns_no_results_without_inventing_headlines():
+    """An empty provider result stays empty for the model."""
+    Client, _, _ = _search_types()
+    client = Client(
+        transport=_mcp_transport(
+            {"content": [{"type": "text", "text": json.dumps({"results": []})}]},
+            [],
+        )
+    )
+    result = await client.search_news("rare event", days=1)
+    assert result["status"] == "no_recent_results"
+    assert result["results"] == []
+
+
+@pytest.mark.asyncio
+async def test_news_rejects_invalid_windows_before_network():
+    """Invalid news windows are rejected without external requests."""
+    Client, _, _ = _search_types()
+    requests = []
+    client = Client(transport=_mcp_transport({}, requests))
+    for days in (0, 8, True, "1"):
+        with pytest.raises(ValueError):
+            await client.search_news("news", days=days)
+    assert not requests
+
+
+@pytest.mark.asyncio
+async def test_plain_text_news_failure_becomes_a_bounded_tool_error(monkeypatch):
+    """Malformed provider text never becomes a headline or crashes the robot tool."""
+    from reachy_mini_conversation_app.tools import get_news
+
+    Client, _, _ = _search_types()
+    client = Client(
+        transport=_mcp_transport(
+            {"content": [{"type": "text", "text": "private provider debug text"}]},
+            [],
+        )
+    )
+    monkeypatch.setattr(get_news, "McpSearchClient", lambda: client)
+    deps = ToolDependencies(reachy_mini=object(), movement_manager=object())
+    result = await get_news.GetNews()(deps, query="news")
+    assert result == {"error": "News search is temporarily unavailable. Do not invent headlines."}
